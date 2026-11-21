@@ -11,7 +11,6 @@ exports.handler = async (event) => {
     const params = new URLSearchParams();
 
     params.append("mode", "payment");
-    params.append("payment_method_types[0]", "card");
     params.append("success_url", `${origin}/?paiement=succes`);
     params.append("cancel_url", `${origin}/?paiement=annule`);
 
