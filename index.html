@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Les Bouilles à Malice — Figurines artisanales en mousse</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- BANDEAU NOTIFICATION PAIEMENT (succès / annulation Stripe) -->
+  <div id="payment-banner" class="payment-banner hidden"></div>
+
+  <!-- EN-TÊTE -->
+  <header class="site-header">
+    <div class="container header-inner">
+      <a href="#" class="logo">
+        <span class="logo-badge">🎨</span>
+        <span class="logo-text">Les Bouilles à Malice</span>
+      </a>
+
+      <nav class="main-nav">
+        <a href="#galerie">La Galerie</a>
+        <a href="#atelier">L'Atelier</a>
+        <a href="#infos">Livraison & Contact</a>
+      </nav>
+
+      <button id="open-cart-btn" class="cart-trigger" aria-label="Ouvrir le panier">
+        <span>🛒 Panier</span>
+        <span id="cart-count" class="cart-badge">0</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- BANNIÈRE HERO -->
+  <section class="hero">
+    <div class="container hero-grid">
+      <div class="hero-content">
+        <span class="pill-tag">✨ 100 % Sculpté & peint à la main</span>
+        <h1>Des petites créatures en mousse pleines de caractère !</h1>
+        <p>
+          Bienvenue dans l'univers des <strong>Bouilles à Malice</strong>. Chaque figurine est imaginée, taillée et peinte artisanalement dans mon atelier. Pièces uniques ou minuscules séries prêtes à adopter.
+        </p>
+        <div class="hero-actions">
+          <a href="#galerie" class="btn btn-primary">Découvrir les créations</a>
+          <a href="#atelier" class="btn btn-secondary">Comment c'est fait ?</a>
+        </div>
+      </div>
+
+      <div class="hero-card-showcase">
+        <div class="sticker-card">
+          <div class="sticker-emoji">👾</div>
+          <h3>Pièces uniques</h3>
+          <p>Aucune machine, aucun moule industriel : chaque expression est sculptée à la main.</p>
+        </div>
+        <div class="sticker-card tilt-right">
+          <div class="sticker-emoji">🪶</div>
+          <h3>Ultra-légères</h3>
+          <p>En mousse haute densité sculptée, douces au toucher et faciles à exposer partout.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- GALERIE / BOUTIQUE -->
+  <main id="galerie" class="shop-section">
+    <div class="container">
+      <div class="section-header">
+        <h2>La Galerie des Bouilles</h2>
+        <p id="results-counter">Chargement des créations...</p>
+      </div>
+
+      <!-- BARRE DE FILTRES -->
+      <div class="controls-bar">
+        <div class="filter-pills" id="category-filters">
+          <button class="filter-btn active" data-category="tout">Toutes</button>
+          <button class="filter-btn" data-category="monstres">Petits Monstres</button>
+          <button class="filter-btn" data-category="animaux">Bestiole & Forêt</button>
+          <button class="filter-btn" data-category="fantastique">Fantastique</button>
+          <button class="filter-btn" data-category="saisonnier">Éditions Spéciales</button>
+        </div>
+
+        <div class="search-sort-group">
+          <input type="search" id="search-input" placeholder="Chercher un prénom, une couleur..." />
+          <label class="checkbox-toggle">
+            <input type="checkbox" id="only-available" />
+            <span>Disponibles uniquement</span>
+          </label>
+          <select id="sort-select" aria-label="Trier par">
+            <option value="default">Tri : Nouveautés</option>
+            <option value="price-asc">Prix croissant</option>
+            <option value="price-desc">Prix décroissant</option>
+            <option value="name-asc">Nom (A → Z)</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- GRILLE DES FIGURINES -->
+      <div id="products-grid" class="products-grid"></div>
+    </div>
+  </main>
+
+  <!-- SECTION ATELIER -->
+  <section id="atelier" class="workshop-section">
+    <div class="container">
+      <div class="workshop-box">
+        <h2>Dans les coulisses de l'atelier</h2>
+        <p class="workshop-intro">
+          Derrière chaque Bouille à Malice se cachent plusieurs heures de sculpture minutieuse, de ponçage doux et de mise en peinture au pinceau.
+        </p>
+        <div class="steps-grid">
+          <div class="step-card">
+            <span class="step-num">1</span>
+            <h3>La taille</h3>
+            <p>Découpe et sculpture directe dans des blocs de mousse sélectionnés pour leur tenue.</p>
+          </div>
+          <div class="step-card">
+            <span class="step-num">2</span>
+            <h3>Les couleurs</h3>
+            <p>Application de plusieurs couches d'acrylique et ombrages pour donner vie au regard.</p>
+          </div>
+          <div class="step-card">
+            <span class="step-num">3</span>
+            <h3>La protection</h3>
+            <p>Vernis protecteur mat ou satiné et emballage soigné prêt pour l'adoption.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- PIED DE PAGE -->
+  <footer id="infos" class="site-footer">
+    <div class="container footer-grid">
+      <div>
+        <h3>Les Bouilles à Malice</h3>
+        <p>Créations artisanales en mousse faites main en France.</p>
+      </div>
+      <div>
+        <h4>Expédition & Paiement</h4>
+        <p>Paiement sécurisé (CB, Apple Pay, Google Pay). Envoi protégé en Colissimo ou Mondial Relay sous 48 à 72 h.</p>
+      </div>
+      <div>
+        <h4>Une question ou demande ?</h4>
+        <p>Contact : <a href="mailto:contact@lesbouillesamalice.fr">contact@lesbouillesamalice.fr</a></p>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <p>
+        © 2026 Les Bouilles à Malice — Tous droits réservés | 
+        <button type="button" class="link-legal" onclick="openLegalModal('mentions')">Mentions légales</button> • 
+        <button type="button" class="link-legal" onclick="openLegalModal('cgv')">Conditions Générales de Vente (CGV)</button>
+      </p>
+    </div>
+  </footer>
+
+  <!-- MODAL FICHE PRODUIT (CARTE D'IDENTITÉ + 3 PHOTOS) -->
+  <div id="product-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+    <div class="modal-card">
+      <button id="close-modal-btn" class="close-btn" aria-label="Fermer">✕</button>
+      <div id="modal-body" class="modal-content-grid"></div>
+    </div>
+  </div>
+
+  <!-- MODAL MENTIONS LÉGALES & CGV -->
+  <div id="legal-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+    <div class="modal-card legal-modal-card">
+      <button id="close-legal-btn" class="close-btn" aria-label="Fermer">✕</button>
+      <div id="legal-body" class="legal-content"></div>
+    </div>
+  </div>
+
+  <!-- TIROIR PANIER -->
+  <div id="cart-backdrop" class="cart-backdrop hidden"></div>
+  <aside id="cart-drawer" class="cart-drawer" aria-label="Votre panier">
+    <div class="cart-header">
+      <h2>Votre Panier d'Adoption</h2>
+      <button id="close-cart-btn" class="close-btn" aria-label="Fermer le panier">✕</button>
+    </div>
+
+    <div id="cart-items" class="cart-items"></div>
+
+    <div class="cart-footer">
+      <div class="cart-summary-row">
+        <span>Sous-total</span>
+        <span id="cart-subtotal">0,00 €</span>
+      </div>
+      <div class="cart-summary-row">
+        <span>Frais de port (offerts dès 60 €)</span>
+        <span id="cart-shipping">5,50 €</span>
+      </div>
+      <div class="cart-summary-row total-row">
+        <span>Total TTC</span>
+        <span id="cart-total">0,00 €</span>
+      </div>
+      <button id="checkout-btn" class="btn btn-primary btn-full">Passer au paiement sécurisé</button>
+      <p class="cart-note">CB, Apple Pay, Google Pay via Stripe • Emballage anti-choc</p>
+    </div>
+  </aside>
+
+  <script src="produits.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
