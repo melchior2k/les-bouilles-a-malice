@@ -1,205 +1,405 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Les Bouilles à Malice — Figurines artisanales en mousse</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Les Bouilles à Malice — Figurines en mousse, chasses au trésor &amp; lutins de Noël</title>
+
+  <!-- Référencement naturel (SEO) -->
+  <meta name="description" content="Les Bouilles à Malice : créations artisanales en mousse façonnées à la main, kits de chasses au trésor clés en main pour anniversaires et fêtes d'enfants, et aventures de lutins pour la magie de Noël en famille.">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="https://les-bouilles-a-malice.netlify.app/">
+
+  <!-- Partage réseaux sociaux & messageries (Open Graph) -->
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="fr_FR">
+  <meta property="og:site_name" content="Les Bouilles à Malice">
+  <meta property="og:title" content="Les Bouilles à Malice — Figurines en mousse, chasses au trésor &amp; lutins de Noël">
+  <meta property="og:description" content="Figurines en mousse faites main, kits de chasses au trésor pour fêtes et anniversaires, et rituels des lutins de Noël en famille.">
+  <meta property="og:url" content="https://les-bouilles-a-malice.netlify.app/">
+  <meta property="og:image" content="https://les-bouilles-a-malice.netlify.app/images/logo-bouilles-a-malice.jpg">
+
+  <!-- Icône visible dans les onglets du navigateur (favicon) -->
+  <link rel="icon" type="image/jpeg" href="images/logo-bouilles-a-malice.jpg">
+  <link rel="shortcut icon" type="image/jpeg" href="images/logo-bouilles-a-malice.jpg">
+  <link rel="apple-touch-icon" href="images/logo-bouilles-a-malice.jpg">
+
+  <link rel="stylesheet" href="style.css">
+
+  <!-- Données structurées JSON-LD pour les moteurs de recherche -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Store",
+    "name": "Les Bouilles à Malice",
+    "description": "Boutique de créations artisanales en mousse façonnées à la main, kits de chasses au trésor pour anniversaires et fêtes, et aventures des lutins de Noël.",
+    "url": "https://les-bouilles-a-malice.netlify.app/",
+    "logo": "https://les-bouilles-a-malice.netlify.app/images/logo-bouilles-a-malice.jpg",
+    "image": "https://les-bouilles-a-malice.netlify.app/images/logo-bouilles-a-malice.jpg",
+    "currenciesAccepted": "EUR",
+    "inLanguage": "fr-FR",
+    "hasOfferCatalog": {
+      "@type": "OfferCatalog",
+      "name": "Catalogue Les Bouilles à Malice",
+      "itemListElement": [
+        {
+          "@type": "OfferCatalog",
+          "name": "Les figurines en mousse"
+        },
+        {
+          "@type": "OfferCatalog",
+          "name": "Les chasses au trésor"
+        },
+        {
+          "@type": "OfferCatalog",
+          "name": "Les aventures des lutins de Noël"
+        }
+      ]
+    }
+  }
+  </script>
 </head>
 <body>
-
-  <!-- BANDEAU NOTIFICATION PAIEMENT (succès / annulation Stripe) -->
-  <div id="payment-banner" class="payment-banner hidden"></div>
-
-  <!-- EN-TÊTE -->
   <header class="site-header">
-    <div class="container header-inner">
-      <a href="#" class="logo">
-        <span class="logo-badge">🎨</span>
-        <span class="logo-text">Les Bouilles à Malice</span>
-      </a>
+    <a href="index.html" class="brand-link" aria-label="Accueil Les Bouilles à Malice">
+      <img src="images/logo-bouilles-a-malice.jpg" alt="Logo Les Bouilles à Malice" class="site-logo">
+      <div class="brand-text">
+        <span class="brand-name">Les Bouilles à Malice</span>
+        <span class="brand-tagline">Figurines en mousse, chasses au trésor &amp; lutins de Noël</span>
+      </div>
+    </a>
 
-      <nav class="main-nav">
-        <a href="#galerie">La Galerie</a>
-        <a href="#atelier">L'Atelier</a>
-        <a href="#infos">Livraison & Contact</a>
-      </nav>
-
-      <button id="open-cart-btn" class="cart-trigger" aria-label="Ouvrir le panier">
-        <span>🛒 Panier</span>
-        <span id="cart-count" class="cart-badge">0</span>
+    <nav class="header-nav" aria-label="Navigation principale">
+      <button type="button" class="header-nav-btn" data-open-modal="apropos-modal">À propos de nous</button>
+      <button type="button" class="header-nav-btn" data-open-modal="contact-modal">Contactez-nous !</button>
+      <button type="button" class="header-cart-link" data-open-modal="panier-modal" aria-label="Ouvrir le panier">
+        Panier (<span id="header-panier-count">0</span>)
       </button>
-    </div>
+    </nav>
   </header>
 
-  <!-- BANNIÈRE HERO -->
-  <section class="hero">
-    <div class="container hero-grid">
-      <div class="hero-content">
-        <span class="pill-tag">✨ 100 % Sculpté & peint à la main</span>
-        <h1>Des petites créatures en mousse pleines de caractère !</h1>
+  <main class="site-main">
+    <!-- Bandeau de retour après paiement Stripe (affiché uniquement si ?paiement=ok ou ?paiement=annule) -->
+    <div id="paiement-retour-banner" class="paiement-retour-banner" role="status" aria-live="polite" hidden></div>
+
+    <section class="intro-banner" aria-label="Présentation">
+      <div class="intro-banner-content">
+        <span class="intro-pill">Créations artisanales &amp; kits d'aventures</span>
+        <h1>Bienvenue dans l'univers des Bouilles à Malice</h1>
         <p>
-          Bienvenue dans l'univers des <strong>Bouilles à Malice</strong>. Chaque figurine est imaginée, taillée et peinte artisanalement dans mon atelier. Pièces uniques ou minuscules séries prêtes à adopter.
+          Découvre nos figurines en mousse façonnées à la main, nos kits de chasses au trésor pour fêtes et anniversaires,
+          ainsi que nos aventures de lutins pour faire vivre la magie de Noël en famille.
         </p>
-        <div class="hero-actions">
-          <a href="#galerie" class="btn btn-primary">Découvrir les créations</a>
-          <a href="#atelier" class="btn btn-secondary">Comment c'est fait ?</a>
+        <div class="intro-highlights">
+          <span class="highlight-item">Figurines en mousse uniques</span>
+          <span class="highlight-item">Anniversaires &amp; fêtes clé en main</span>
+          <span class="highlight-item">Rituels des lutins de Noël</span>
         </div>
       </div>
 
-      <div class="hero-card-showcase">
-        <div class="sticker-card">
-          <div class="sticker-emoji">👾</div>
-          <h3>Pièces uniques</h3>
-          <p>Aucune machine, aucun moule industriel : chaque expression est sculptée à la main.</p>
-        </div>
-        <div class="sticker-card tilt-right">
-          <div class="sticker-emoji">🪶</div>
-          <h3>Ultra-légères</h3>
-          <p>En mousse haute densité sculptée, douces au toucher et faciles à exposer partout.</p>
-        </div>
+      <div class="intro-banner-visual" aria-hidden="true">
+        <img src="images/logo-bouilles-a-malice.jpg" alt="" class="banner-badge-logo">
       </div>
-    </div>
-  </section>
+    </section>
 
-  <!-- GALERIE / BOUTIQUE -->
-  <main id="galerie" class="shop-section">
-    <div class="container">
-      <div class="section-header">
-        <h2>La Galerie des Bouilles</h2>
-        <p id="results-counter">Chargement des créations...</p>
+    <!-- Encart explicatif du déroulement de commande -->
+    <section class="commande-guide" aria-label="Comment se passe ta commande">
+      <h2 class="commande-guide-titre">Comment se passe ta commande ?</h2>
+      <div class="commande-etapes">
+        <article class="commande-etape">
+          <span class="etape-numero">1</span>
+          <div>
+            <h3>Paiement sécurisé sans compte à créer</h3>
+            <p>
+              Règle directement par carte bancaire via Stripe (avec possibilité d'ajouter un code promo) et reçois aussitôt ton reçu par e-mail.
+            </p>
+          </div>
+        </article>
+
+        <article class="commande-etape">
+          <span class="etape-numero">2</span>
+          <div>
+            <h3>Kits numériques envoyés par e-mail</h3>
+            <p>
+              Les chasses au trésor et aventures de lutins (<strong>0,00 € de port</strong>) sont envoyés par e-mail sous 24 h à l'adresse indiquée lors du paiement.
+            </p>
+          </div>
+        </article>
+
+        <article class="commande-etape">
+          <span class="etape-numero">3</span>
+          <div>
+            <h3>Créations physiques &amp; suivi transporteur</h3>
+            <p>
+              Expédition soignée via <strong>Mondial Relay</strong> ou <strong>Colissimo</strong> (offerte dès 75 €). Tu reçois ton lien de suivi par e-mail et SMS dès l'envoi du colis.
+            </p>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="catalogue-section" aria-label="Catalogue des produits">
+      <div class="filtres-categories" role="tablist" aria-label="Catégories de produits">
+        <button type="button" class="filtre-btn actif" data-categorie="tous">Tout voir</button>
+        <button type="button" class="filtre-btn" data-categorie="figurines-mousse">Les figurines en mousse</button>
+        <button type="button" class="filtre-btn" data-categorie="chasses-au-tresor">Les chasses au trésor</button>
+        <button type="button" class="filtre-btn" data-categorie="lutins-noel">Les aventures des lutins de Noël</button>
       </div>
 
-      <!-- BARRE DE FILTRES -->
-      <div class="controls-bar">
-        <div class="filter-pills" id="category-filters">
-          <button class="filter-btn active" data-category="tout">Toutes</button>
-          <button class="filter-btn" data-category="monstres">Petits Monstres</button>
-          <button class="filter-btn" data-category="animaux">Bestiole & Forêt</button>
-          <button class="filter-btn" data-category="fantastique">Fantastique</button>
-          <button class="filter-btn" data-category="saisonnier">Éditions Spéciales</button>
-        </div>
-
-        <div class="search-sort-group">
-          <input type="search" id="search-input" placeholder="Chercher un prénom, une couleur..." />
-          <label class="checkbox-toggle">
-            <input type="checkbox" id="only-available" />
-            <span>Disponibles uniquement</span>
-          </label>
-          <select id="sort-select" aria-label="Trier par">
-            <option value="default">Tri : Nouveautés</option>
-            <option value="price-asc">Prix croissant</option>
-            <option value="price-desc">Prix décroissant</option>
-            <option value="name-asc">Nom (A → Z)</option>
-          </select>
-        </div>
-      </div>
-
-      <!-- GRILLE DES FIGURINES -->
-      <div id="products-grid" class="products-grid"></div>
-    </div>
+      <div id="catalogue-grid" class="catalogue-grid"></div>
+    </section>
   </main>
 
-  <!-- SECTION ATELIER -->
-  <section id="atelier" class="workshop-section">
-    <div class="container">
-      <div class="workshop-box">
-        <h2>Dans les coulisses de l'atelier</h2>
-        <p class="workshop-intro">
-          Derrière chaque Bouille à Malice se cachent plusieurs heures de sculpture minutieuse, de ponçage doux et de mise en peinture au pinceau.
-        </p>
-        <div class="steps-grid">
-          <div class="step-card">
-            <span class="step-num">1</span>
-            <h3>La taille</h3>
-            <p>Découpe et sculpture directe dans des blocs de mousse sélectionnés pour leur tenue.</p>
-          </div>
-          <div class="step-card">
-            <span class="step-num">2</span>
-            <h3>Les couleurs</h3>
-            <p>Application de plusieurs couches d'acrylique et ombrages pour donner vie au regard.</p>
-          </div>
-          <div class="step-card">
-            <span class="step-num">3</span>
-            <h3>La protection</h3>
-            <p>Vernis protecteur mat ou satiné et emballage soigné prêt pour l'adoption.</p>
-          </div>
-        </div>
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <p>&copy; Les Bouilles à Malice — Créations &amp; kits d'aventures</p>
+      <div class="footer-links">
+        <button type="button" class="footer-link-btn" data-open-modal="apropos-modal">À propos de nous</button>
+        <button type="button" class="footer-link-btn" data-open-modal="contact-modal">Contactez-nous !</button>
+        <button type="button" class="footer-link-btn" data-open-modal="cgv-modal">Conditions Générales de Vente (CGV)</button>
       </div>
-    </div>
-  </section>
-
-  <!-- PIED DE PAGE -->
-  <footer id="infos" class="site-footer">
-    <div class="container footer-grid">
-      <div>
-        <h3>Les Bouilles à Malice</h3>
-        <p>Créations artisanales en mousse faites main en France.</p>
-      </div>
-      <div>
-        <h4>Expédition & Paiement</h4>
-        <p>Paiement sécurisé (CB, Apple Pay, Google Pay). Envoi protégé en Colissimo ou Mondial Relay sous 48 à 72 h.</p>
-      </div>
-      <div>
-        <h4>Une question ou demande ?</h4>
-        <p>Contact : <a href="mailto:contact@lesbouillesamalice.fr">contact@lesbouillesamalice.fr</a></p>
-      </div>
-    </div>
-    <div class="footer-bottom">
-      <p>
-        © 2026 Les Bouilles à Malice — Tous droits réservés | 
-        <button type="button" class="link-legal" onclick="openLegalModal('mentions')">Mentions légales</button> • 
-        <button type="button" class="link-legal" onclick="openLegalModal('cgv')">Conditions Générales de Vente (CGV)</button>
-      </p>
     </div>
   </footer>
 
-  <!-- MODAL FICHE PRODUIT (CARTE D'IDENTITÉ + 3 PHOTOS) -->
-  <div id="product-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+  <!-- Modale À propos de nous -->
+  <div id="apropos-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="apropos-titre" hidden>
+    <div class="modal-card modal-apropos-card">
+      <div class="modal-header">
+        <h2 id="apropos-titre">À propos de nous</h2>
+        <button type="button" class="modal-close-btn" data-close-modal="apropos-modal" aria-label="Fermer À propos de nous">&times;</button>
+      </div>
+
+      <div class="modal-body apropos-grid">
+        <div class="apropos-photo-cadre" aria-label="Emplacement photo à venir">
+          <img
+            id="apropos-photo-img"
+            src=""
+            alt="Photo de l'atelier ou des créations Les Bouilles à Malice"
+            class="apropos-photo"
+            hidden
+          >
+          <div id="apropos-photo-placeholder" class="apropos-photo-placeholder">
+            <span class="placeholder-label">Photo à ajouter prochainement</span>
+            <small>Emplacement réservé dans <code>images/</code></small>
+          </div>
+        </div>
+
+        <div class="apropos-texte">
+          <span class="intro-pill">Notre démarche</span>
+          <p>
+            Chez <strong>Les Bouilles à Malice</strong>, chaque création est née de la passion du bien faire,
+            de la patience et du plaisir de fabriquer des objets vivants, joyeux et accessibles. Qu'il s'agisse
+            d'une figurine façonnée à la main en mousse, d'un kit de chasse au trésor pensé pour faire briller
+            les yeux des enfants ou d'une aventure de lutins de Noël, rien n'est laissé au hasard.
+          </p>
+          <p>
+            Parce que chaque pièce est réalisée artisanalement et à la main, <strong>chaque création est unique</strong> :
+            de subtiles nuances de teintes, de découpe ou d'expression font partie de son charme et garantissent
+            qu'elle ne ressemble tout simplement à aucune autre.
+          </p>
+          <p class="apropos-cta-ligne">
+            Tu as une idée précise, un thème particulier ou un cadeau sur mesure en tête ?
+            <button type="button" class="link-inline-btn" data-switch-modal="apropos-modal:contact-modal">
+              Contactez-nous ! &rarr;
+            </button>
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modale Contact / Demande de création personnalisée -->
+  <div id="contact-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="contact-titre" hidden>
+    <div class="modal-card modal-contact-card">
+      <div class="modal-header">
+        <h2 id="contact-titre">Contactez-nous !</h2>
+        <button type="button" class="modal-close-btn" data-close-modal="contact-modal" aria-label="Fermer le formulaire">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <p class="contact-intro">
+          Décris ton projet (figurine en mousse sur mesure, thème de chasse au trésor, aventure de lutin ou demande spéciale).
+          Ta demande sera transmise à <strong>bouilles.a.malice@gmail.com</strong>.
+        </p>
+
+        <form
+          id="form-creation-personnalisee"
+          name="creation-personnalisee"
+          method="POST"
+          data-netlify="true"
+          netlify-honeypot="bot-field"
+          class="formulaire-perso"
+        >
+          <input type="hidden" name="form-name" value="creation-personnalisee">
+          <p class="champ-piege" hidden>
+            <label>Ne pas remplir : <input name="bot-field"></label>
+          </p>
+
+          <div class="form-ligne-deux">
+            <div class="form-groupe">
+              <label for="perso-nom">Ton nom ou prénom *</label>
+              <input type="text" id="perso-nom" name="nom" required placeholder="Ex. Camille">
+            </div>
+
+            <div class="form-groupe">
+              <label for="perso-email">Ton adresse e-mail *</label>
+              <input type="email" id="perso-email" name="email" required placeholder="exemple@domaine.fr">
+            </div>
+          </div>
+
+          <div class="form-ligne-deux">
+            <div class="form-groupe">
+              <label for="perso-type">Type de création souhaitée</label>
+              <select id="perso-type" name="type_creation">
+                <option value="Figurine en mousse sur mesure">Figurine en mousse sur mesure</option>
+                <option value="Chasse au trésor personnalisée">Chasse au trésor personnalisée</option>
+                <option value="Aventure des lutins de Noël personnalisée">Aventure des lutins de Noël personnalisée</option>
+                <option value="Autre demande">Autre demande</option>
+              </select>
+            </div>
+
+            <div class="form-groupe">
+              <label for="perso-date">Date souhaitée / occasion (optionnel)</label>
+              <input type="text" id="perso-date" name="occasion_date" placeholder="Ex. Anniversaire en juin, Noël...">
+            </div>
+          </div>
+
+          <div class="form-groupe">
+            <label for="perso-message">Décris ta création idéale (couleurs, univers, détails...) *</label>
+            <textarea id="perso-message" name="message" rows="5" required placeholder="Explique-nous ce que tu imagines..."></textarea>
+          </div>
+
+          <div class="form-actions">
+            <button type="submit" class="btn-checkout">Envoyer la demande à bouilles.a.malice@gmail.com</button>
+          </div>
+
+          <p id="perso-statut" class="form-statut" role="status" aria-live="polite"></p>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modale Panier -->
+  <div id="panier-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="panier-titre" hidden>
     <div class="modal-card">
-      <button id="close-modal-btn" class="close-btn" aria-label="Fermer">✕</button>
-      <div id="modal-body" class="modal-content-grid"></div>
+      <div class="modal-header">
+        <h2 id="panier-titre">Mon panier (<span id="panier-count">0</span>)</h2>
+        <button type="button" class="modal-close-btn" data-close-modal="panier-modal" aria-label="Fermer le panier">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <ul id="panier-items" class="panier-items"></ul>
+        <p class="panier-total-ligne">Total : <strong id="panier-total">0.00 €</strong></p>
+        <p class="panier-cgv-note">
+          En cliquant sur le paiement sécurisé, tu acceptes les
+          <button type="button" class="link-inline-btn" data-switch-modal="panier-modal:cgv-modal">Conditions Générales de Vente</button>.
+        </p>
+        <button type="button" id="btn-checkout" class="btn-checkout">Passer au paiement sécurisé</button>
+      </div>
     </div>
   </div>
 
-  <!-- MODAL MENTIONS LÉGALES & CGV -->
-  <div id="legal-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true">
-    <div class="modal-card legal-modal-card">
-      <button id="close-legal-btn" class="close-btn" aria-label="Fermer">✕</button>
-      <div id="legal-body" class="legal-content"></div>
+  <!-- Modale Fiche Produit Détaillée -->
+  <div id="produit-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="modal-produit-titre" hidden>
+    <div class="modal-card modal-produit-card">
+      <div class="modal-header">
+        <div class="modal-header-badges">
+          <span id="modal-produit-categorie" class="modal-badge"></span>
+          <span id="modal-produit-une" class="badge-une" hidden>À la une</span>
+          <span id="modal-produit-nouveau" class="badge-nouveau" hidden>Nouveau</span>
+        </div>
+        <button type="button" id="close-produit-btn" class="modal-close-btn" aria-label="Fermer la fiche produit">&times;</button>
+      </div>
+
+      <div class="modal-body modal-produit-body">
+        <div class="modal-galerie">
+          <img id="modal-produit-photo-principale" src="" alt="" class="modal-photo-grande">
+          <video
+            id="modal-produit-video-principale"
+            class="modal-video-grande"
+            controls
+            playsinline
+            preload="metadata"
+            hidden
+          ></video>
+          <div id="modal-produit-vignettes" class="modal-vignettes"></div>
+        </div>
+
+        <div class="modal-infos">
+          <h2 id="modal-produit-titre"></h2>
+          <p id="modal-produit-prix" class="modal-prix"></p>
+          <p id="modal-produit-stock" class="modal-stock"></p>
+          <p id="modal-produit-description" class="modal-description-longue"></p>
+          <ul id="modal-produit-collection" class="carte-collection"></ul>
+          <div id="modal-produit-variantes" class="variantes-box"></div>
+          <button type="button" id="modal-btn-ajouter" class="btn-ajouter">Ajouter au panier</button>
+        </div>
+      </div>
     </div>
   </div>
 
-  <!-- TIROIR PANIER -->
-  <div id="cart-backdrop" class="cart-backdrop hidden"></div>
-  <aside id="cart-drawer" class="cart-drawer" aria-label="Votre panier">
-    <div class="cart-header">
-      <h2>Votre Panier d'Adoption</h2>
-      <button id="close-cart-btn" class="close-btn" aria-label="Fermer le panier">✕</button>
+  <!-- Cadre photo grand format (presque toute la page, adapté au cadre) -->
+  <div id="photo-cadre-modal" class="cadre-photo-overlay" role="dialog" aria-modal="true" aria-label="Photo du produit en grand cadre" hidden>
+    <div class="cadre-photo-box">
+      <button type="button" id="close-photo-cadre-btn" class="cadre-photo-close" aria-label="Fermer la photo">&times;</button>
+      <img id="photo-cadre-img" src="" alt="" class="cadre-photo-img">
     </div>
+  </div>
 
-    <div id="cart-items" class="cart-items"></div>
+  <!-- Modale CGV -->
+  <div id="cgv-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="cgv-title" hidden>
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2 id="cgv-title">Conditions Générales de Vente (CGV)</h2>
+        <button type="button" id="close-cgv-btn" class="modal-close-btn" aria-label="Fermer les CGV">&times;</button>
+      </div>
+      <div class="modal-body">
+        <h3>Article 1 — Objet</h3>
+        <p>
+          Les présentes Conditions Générales de Vente régissent les ventes de produits proposés sur le site
+          <strong>Les Bouilles à Malice</strong> : figurines façonnées en mousse (« Les figurines en mousse »),
+          kits d'animations et chasses au trésor (« Les chasses au trésor ») et kits d'aventures festives
+          (« Les aventures des lutins de Noël »).
+        </p>
 
-    <div class="cart-footer">
-      <div class="cart-summary-row">
-        <span>Sous-total</span>
-        <span id="cart-subtotal">0,00 €</span>
+        <h3>Article 2 — Prix et paiement</h3>
+        <p>
+          Les prix sont indiqués en euros (€). Le règlement s'effectue en ligne de manière sécurisée via Stripe
+          au moment de la validation de la commande. Les frais de port sont nuls pour les produits numériques ;
+          pour les produits physiques, ils sont fixés selon le gabarit (4,90 € petit, 5,90 € moyen, 6,90 € grand,
+          et 6,90 € dès 2 produits physiques) et offerts à partir de 75,00 € de commande.
+        </p>
+
+        <h3>Article 3 — Fabrication artisanale et disponibilité</h3>
+        <p>
+          Les figurines en mousse étant réalisées artisanalement et parfois en pièce unique ou petite série,
+          de légères variations de teintes, de découpe ou de finition peuvent exister d'une création à l'autre,
+          garantissant le caractère unique de chaque pièce. Les stocks affichés s'appliquent dans la limite des disponibilités.
+        </p>
+
+        <h3>Article 4 — Expédition et livraison</h3>
+        <p>
+          Les commandes portant sur des articles physiques sont expédiées via Mondial Relay ou Colissimo
+          selon l'option choisie lors du passage en caisse.
+        </p>
+
+        <h3>Article 5 — Droit de rétractation et retours</h3>
+        <p>
+          Conformément à la réglementation applicable à la vente à distance, le client dispose d'un délai de 14 jours
+          à compter de la réception pour les articles physiques non personnalisés et retournés dans leur état d'origine,
+          les frais de retour restant à la charge du client sauf erreur de préparation. Les contenus ou kits numériques
+          téléchargés ou accessibles immédiatement après achat peuvent être soumis aux exceptions légales prévues pour
+          les fournitures numériques.
+        </p>
+
+        <h3>Article 6 — Contact et responsabilité</h3>
+        <p>
+          Pour toute question relative à une commande ou au présent catalogue, le client peut contacter le vendeur
+          à l'adresse <strong>bouilles.a.malice@gmail.com</strong>.
+        </p>
       </div>
-      <div class="cart-summary-row">
-        <span>Frais de port (offerts dès 60 €)</span>
-        <span id="cart-shipping">5,50 €</span>
-      </div>
-      <div class="cart-summary-row total-row">
-        <span>Total TTC</span>
-        <span id="cart-total">0,00 €</span>
-      </div>
-      <button id="checkout-btn" class="btn btn-primary btn-full">Passer au paiement sécurisé</button>
-      <p class="cart-note">CB, Apple Pay, Google Pay via Stripe • Emballage anti-choc</p>
     </div>
-  </aside>
+  </div>
 
   <script src="produits.js"></script>
   <script src="app.js"></script>

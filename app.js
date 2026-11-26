@@ -1,430 +1,1036 @@
-// État global de la boutique
-let currentCategory = "tout";
-let searchQuery = "";
-let onlyAvailable = false;
-let currentSort = "default";
-let cart = JSON.parse(localStorage.getItem("bouilles_cart")) || [];
+let categorieActive = "tous";
+let panier = [];
+let observateurVideosAccueil = null;
 
-const SHIPPING_COST = 5.50;
-const FREE_SHIPPING_THRESHOLD = 60.00;
+const SEUIL_PORT_GRATUIT = 75.0;
+const PORT_DEUX_PRODUITS_PHYSIQUES = 6.9;
 
-// Sélecteurs DOM
-const gridEl = document.getElementById("products-grid");
-const counterEl = document.getElementById("results-counter");
-const searchInput = document.getElementById("search-input");
-const availableCheckbox = document.getElementById("only-available");
-const sortSelect = document.getElementById("sort-select");
+const TARIFS_GABARIT = {
+  petit: 4.9,
+  moyen: 5.9,
+  grand: 6.9
+};
 
-function formatPrice(value) {
-  return value.toFixed(2).replace(".", ",") + " €";
+const PRIORITE_GABARIT = {
+  petit: 1,
+  moyen: 2,
+  grand: 3
+};
+
+const LIBELLES_GABARIT = {
+  petit: "Petit (4,90 €)",
+  moyen: "Moyen (5,90 €)",
+  grand: "Grand (6,90 €)"
+};
+
+function aDesVariantes(prod) {
+  return Array.isArray(prod.variantes) && prod.variantes.length > 0;
 }
 
-// Rendu visuel d'une image précise avec fallback emoji
-function renderVisualImage(imgSrc, product, labelText = "Photo à venir") {
+function getVarianteParId(prod, varianteId) {
+  if (!aDesVariantes(prod)) return null;
+  if (varianteId) {
+    const trouvee = prod.variantes.find((v) => v.id === varianteId);
+    if (trouvee) return trouvee;
+  }
+  const disponible = prod.variantes.find((v) => {
+    if (estProduitNumerique(prod, v)) return true;
+    return typeof v.stock !== "number" || v.stock > 0;
+  });
+  return disponible || prod.variantes[0];
+}
+
+function getInfosLivraisonProduit(prod, variante = null) {
+  const typeLivraison = (variante && variante.livraison)
+    || (prod && prod.livraison)
+    || "physique";
+  const gabarit = (variante && variante.gabarit)
+    || (prod && prod.gabarit)
+    || "petit";
+  return { typeLivraison, gabarit };
+}
+
+function estProduitNumerique(prod, variante = null) {
+  const { typeLivraison } = getInfosLivraisonProduit(prod, variante);
+  return typeLivraison === "numerique";
+}
+
+function getStockMax(prod, variante = null) {
+  if (estProduitNumerique(prod, variante)) {
+    return Infinity;
+  }
+  if (variante && typeof variante.stock === "number") {
+    return variante.stock;
+  }
+  return typeof prod.stock === "number" ? prod.stock : Infinity;
+}
+
+function getStockTotal(prod) {
+  if (estProduitNumerique(prod)) {
+    return Infinity;
+  }
+  if (aDesVariantes(prod)) {
+    const stocksVariantes = prod.variantes
+      .map((v) => v.stock)
+      .filter((s) => typeof s === "number");
+    if (stocksVariantes.length > 0) {
+      return stocksVariantes.reduce((somme, s) => somme + Math.max(0, s), 0);
+    }
+  }
+  return typeof prod.stock === "number" ? prod.stock : Infinity;
+}
+
+function estEpuise(prod, variante = null) {
+  if (estProduitNumerique(prod, variante)) {
+    return false;
+  }
+  const stock = getStockMax(prod, variante);
+  return Number.isFinite(stock) && stock <= 0;
+}
+
+function formaterTexteStock(prod, variante = null) {
+  if (estProduitNumerique(prod, variante)) {
+    return "En stock";
+  }
+
+  const stockVariante = getStockMax(prod, variante);
+  const nbVariantes = aDesVariantes(prod) ? prod.variantes.length : 0;
+
+  if (nbVariantes <= 1) {
+    if (!Number.isFinite(stockVariante)) return "";
+    if (stockVariante <= 0) return "Épuisé";
+    if (stockVariante === 1) return "1 exemplaire en stock";
+    return `${stockVariante} exemplaires en stock`;
+  }
+
+  const stockTotal = getStockTotal(prod);
+  if (!Number.isFinite(stockTotal)) return "";
+  if (stockTotal <= 0) return "Épuisé";
+
+  const libelleTotal = stockTotal === 1
+    ? "1 exemplaire en stock"
+    : `${stockTotal} exemplaires en stock`;
+
+  if (!Number.isFinite(stockVariante)) return libelleTotal;
+  if (stockVariante <= 0) return `${libelleTotal} (épuisé pour cette déclinaison)`;
+  return `${libelleTotal} (${stockVariante} pour cette déclinaison)`;
+}
+
+function getInfosLivraisonItem(item) {
+  const prod = typeof PRODUITS !== "undefined"
+    ? PRODUITS.find((p) => p.id === item.id)
+    : null;
+  const variante = (prod && Array.isArray(prod.variantes) && item.varianteId)
+    ? prod.variantes.find((v) => v.id === item.varianteId)
+    : null;
+
+  const typeLivraison = item.livraison
+    || (variante && variante.livraison)
+    || (prod && prod.livraison)
+    || "physique";
+  const gabarit = item.gabarit
+    || (variante && variante.gabarit)
+    || (prod && prod.gabarit)
+    || "petit";
+
+  return { typeLivraison, gabarit };
+}
+
+function calculerResumePanier() {
+  let sousTotalTotal = 0;
+  let quantitePhysique = 0;
+  let gabaritMax = null;
+  let prioriteMax = 0;
+  let aDuPhysique = false;
+
+  for (const item of panier) {
+    const qty = Number(item.qty || 1);
+    const lignePrix = Number(item.prix || 0) * qty;
+    sousTotalTotal += lignePrix;
+
+    const { typeLivraison, gabarit } = getInfosLivraisonItem(item);
+    if (typeLivraison === "physique") {
+      aDuPhysique = true;
+      quantitePhysique += qty;
+      const prio = PRIORITE_GABARIT[gabarit] || 1;
+      if (prio > prioriteMax) {
+        prioriteMax = prio;
+        gabaritMax = gabarit;
+      }
+    }
+  }
+
+  let fraisPort = 0;
+  if (aDuPhysique && sousTotalTotal < SEUIL_PORT_GRATUIT) {
+    if (quantitePhysique >= 2) {
+      fraisPort = PORT_DEUX_PRODUITS_PHYSIQUES;
+    } else {
+      fraisPort = TARIFS_GABARIT[gabaritMax] ?? TARIFS_GABARIT.petit;
+    }
+  }
+
+  const montantRestantPortGratuit = aDuPhysique
+    ? Math.max(0, SEUIL_PORT_GRATUIT - sousTotalTotal)
+    : 0;
+
+  return {
+    sousTotalTotal,
+    quantitePhysique,
+    aDuPhysique,
+    gabaritMax: gabaritMax || "petit",
+    fraisPort,
+    montantRestantPortGratuit,
+    totalAvecPort: sousTotalTotal + fraisPort
+  };
+}
+
+function getMediaProduit(prod) {
+  const grandes = Array.isArray(prod.images) && prod.images.length ? prod.images : [""];
+  const miniatures = Array.isArray(prod.vignettes) && prod.vignettes.length
+    ? prod.vignettes
+    : grandes;
+  return { grandes, miniatures };
+}
+
+function formaterCarteCollection(prod, variante = null) {
+  const carte = (prod && prod.carteCollection) || {};
+  const { typeLivraison, gabarit } = getInfosLivraisonProduit(prod, variante);
+  const lignes = [];
+
+  if (carte.univers) lignes.push(`<li><strong>Univers :</strong> ${carte.univers}</li>`);
+  if (carte.particularite) lignes.push(`<li><strong>Astuce :</strong> ${carte.particularite}</li>`);
+  if (carte.age) lignes.push(`<li><strong>Âge conseillé :</strong> ${carte.age}</li>`);
+  if (carte.duree) lignes.push(`<li><strong>Durée / rythme :</strong> ${carte.duree}</li>`);
+  if (carte.joueurs) lignes.push(`<li><strong>Participants :</strong> ${carte.joueurs}</li>`);
+  if (carte.couleurs) lignes.push(`<li><strong>Teintes :</strong> ${carte.couleurs}</li>`);
+  if (carte.finition) lignes.push(`<li><strong>Finition :</strong> ${carte.finition}</li>`);
+
+  if (typeLivraison === "numerique") {
+    lignes.push(`<li><strong>Livraison :</strong> Numérique (0,00 € de port)</li>`);
+  } else {
+    const labelGabarit = LIBELLES_GABARIT[gabarit] || LIBELLES_GABARIT.petit;
+    lignes.push(`<li><strong>Livraison :</strong> Physique — gabarit ${labelGabarit} (gratuit dès 75,00 €)</li>`);
+  }
+
+  return lignes.join("");
+}
+
+function genererHtmlVariantes(prod, varianteActive, selectId) {
+  if (!aDesVariantes(prod)) return "";
+  const label = prod.varianteLabel || "Déclinaison";
+  const estNumeriqueProduit = estProduitNumerique(prod);
+
+  const options = prod.variantes.map((v) => {
+    const estNumVar = estProduitNumerique(prod, v);
+    let mentionStock = "";
+    if (!estNumeriqueProduit && !estNumVar) {
+      const stockV = typeof v.stock === "number" ? v.stock : Infinity;
+      if (Number.isFinite(stockV)) {
+        mentionStock = stockV > 0 ? ` (${stockV} en stock)` : " (Épuisé)";
+      }
+    }
+    const selected = varianteActive && v.id === varianteActive.id ? "selected" : "";
+    return `<option value="${v.id}" ${selected}>${v.nom}${mentionStock}</option>`;
+  }).join("");
+
   return `
-    <img 
-      src="${imgSrc}" 
-      alt="${product.nom}" 
-      onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';"
-    />
-    <div class="placeholder-art" style="display:none; background:${product.couleurFond || '#f5efe0'};">
-      ${product.emoji || '🎨'}
-      <span>${labelText}</span>
+    <div class="variantes-box">
+      <label class="variante-label" for="${selectId}">${label} :</label>
+      <select id="${selectId}" class="variante-select" data-produit-id="${prod.id}">
+        ${options}
+      </select>
     </div>
   `;
 }
 
-// Filtrage & tri
-function getFilteredProducts() {
-  let list = PRODUITS.filter((p) => {
-    const matchCat = currentCategory === "tout" || p.categorie === currentCategory;
-    const matchStock = !onlyAvailable || p.stock > 0;
-    const q = searchQuery.trim().toLowerCase();
-    const matchSearch =
-      !q ||
-      p.nom.toLowerCase().includes(q) ||
-      p.descriptionCourte.toLowerCase().includes(q) ||
-      p.categorieLabel.toLowerCase().includes(q);
-    return matchCat && matchStock && matchSearch;
-  });
-
-  if (currentSort === "price-asc") {
-    list.sort((a, b) => a.prix - b.prix);
-  } else if (currentSort === "price-desc") {
-    list.sort((a, b) => b.prix - a.prix);
-  } else if (currentSort === "name-asc") {
-    list.sort((a, b) => a.nom.localeCompare(b.nom, "fr"));
-  }
-
-  return list;
+function getScoreMiseEnAvant(prod) {
+  if (prod && prod.aLaUne) return 2;
+  if (prod && prod.nouveau) return 1;
+  return 0;
 }
 
-// Affichage de la grille principale
-function renderProducts() {
-  const items = getFilteredProducts();
-  counterEl.textContent = `${items.length} création${items.length > 1 ? "s" : ""} affichée${items.length > 1 ? "s" : ""}`;
+function afficherPhotoSurCarte(carte, photoSrc, masquerVideo = true) {
+  const mainImg = carte.querySelector(".photo-principale");
+  const mainVideo = carte.querySelector(".video-principale");
+  if (mainVideo && masquerVideo) {
+    mainVideo.pause();
+    mainVideo.hidden = true;
+  }
+  if (mainImg) {
+    mainImg.hidden = false;
+    if (photoSrc) {
+      mainImg.src = photoSrc;
+    }
+  }
+}
 
-  if (items.length === 0) {
-    gridEl.innerHTML = `<p style="grid-column:1/-1; text-align:center; padding:40px; font-weight:700;">Aucune Bouille ne correspond à cette recherche 😅 Essayez un autre filtre !</p>`;
+function afficherVideoSurCarte(carte, videoSrc, autoPlay = true) {
+  const mainImg = carte.querySelector(".photo-principale");
+  const mainVideo = carte.querySelector(".video-principale");
+  if (!mainVideo || !videoSrc) return;
+
+  if (mainImg) {
+    mainImg.hidden = true;
+  }
+  if (mainVideo.getAttribute("src") !== videoSrc) {
+    mainVideo.src = videoSrc;
+  }
+  mainVideo.muted = true;
+  mainVideo.loop = true;
+  mainVideo.hidden = false;
+  if (autoPlay) {
+    mainVideo.play().catch(() => {});
+  }
+}
+
+function configurerAutoplayVideosAccueil() {
+  if (observateurVideosAccueil) {
+    observateurVideosAccueil.disconnect();
+    observateurVideosAccueil = null;
+  }
+
+  const cartesAvecVideo = Array.from(document.querySelectorAll(".carte-produit[data-video-src]"));
+  if (!cartesAvecVideo.length) return;
+
+  if (!("IntersectionObserver" in window)) {
+    cartesAvecVideo.forEach((carte) => {
+      const videoSrc = carte.dataset.videoSrc;
+      const thumbVideo = carte.querySelector(".thumb-video");
+      carte.querySelectorAll(".thumb-btn").forEach((b) => b.classList.remove("actif"));
+      if (thumbVideo) thumbVideo.classList.add("actif");
+      afficherVideoSurCarte(carte, videoSrc, true);
+    });
     return;
   }
 
-  gridEl.innerHTML = items
-    .map((p) => {
-      const isAvailable = p.stock > 0;
-      const mainImg = (p.images && p.images[0]) || "";
-      const badgeHtml = isAvailable
-        ? `<span class="status-badge badge-unique">${p.stock === 1 ? "Pièce unique" : `${p.stock} dispo`}</span>`
-        : `<span class="status-badge badge-adopted">Adoptée ♥</span>`;
+  observateurVideosAccueil = new IntersectionObserver(
+    (entries) => {
+      entries.forEach((entry) => {
+        const carte = entry.target;
+        const videoSrc = carte.dataset.videoSrc;
+        const mainVideo = carte.querySelector(".video-principale");
+        if (!videoSrc || !mainVideo) return;
 
-      return `
-        <article class="product-card">
-          <div class="product-media" onclick="openProductModal('${p.id}')">
-            ${badgeHtml}
-            ${renderVisualImage(mainImg, p)}
-          </div>
-          <div class="product-body">
-            <div class="product-meta">${p.categorieLabel} • ${p.hauteur}</div>
-            <h3 class="product-title" onclick="openProductModal('${p.id}')">${p.nom}</h3>
-            <p class="product-desc">${p.descriptionCourte}</p>
-            <div class="product-footer">
-              <span class="product-price">${formatPrice(p.prix)}</span>
-              <button 
-                class="btn btn-primary btn-small" 
-                ${!isAvailable ? "disabled" : ""}
-                onclick="addToCart('${p.id}')"
-              >
-                ${isAvailable ? "+ Adopter" : "Adoptée"}
-              </button>
-            </div>
-          </div>
-        </article>
-      `;
-    })
-    .join("");
+        if (entry.isIntersecting) {
+          // Si l'utilisateur n'a pas volontairement basculé sur une miniature photo, lance la vidéo
+          if (carte.dataset.modeMedia !== "photo") {
+            const thumbVideo = carte.querySelector(".thumb-video");
+            carte.querySelectorAll(".thumb-btn").forEach((b) => b.classList.remove("actif"));
+            if (thumbVideo) thumbVideo.classList.add("actif");
+            afficherVideoSurCarte(carte, videoSrc, true);
+          }
+        } else {
+          mainVideo.pause();
+        }
+      });
+    },
+    { threshold: 0.45 }
+  );
+
+  cartesAvecVideo.forEach((carte) => observateurVideosAccueil.observe(carte));
 }
 
-// Changement de photo active dans la modale
-function selectModalPhoto(productId, index) {
-  const p = PRODUITS.find((item) => item.id === productId);
-  if (!p || !p.images[index]) return;
+function afficherCatalogue() {
+  const grid = document.getElementById("catalogue-grid");
+  if (!grid) return;
 
-  const mainContainer = document.getElementById("modal-main-visual");
-  mainContainer.innerHTML = renderVisualImage(p.images[index], p, `Vue ${index + 1}`);
+  if (typeof PRODUITS === "undefined" || !Array.isArray(PRODUITS)) {
+    grid.innerHTML = "<p>Catalogue indisponible pour le moment.</p>";
+    return;
+  }
 
-  document.querySelectorAll(".thumb-btn").forEach((btn, idx) => {
-    btn.classList.toggle("active", idx === index);
+  const filtres = categorieActive === "tous"
+    ? [...PRODUITS]
+    : PRODUITS.filter((p) => p.categorie === categorieActive);
+
+  // Priorité : aLaUne (2) > nouveau (1) > standard (0), en conservant l'ordre relatif
+  filtres.sort((a, b) => getScoreMiseEnAvant(b) - getScoreMiseEnAvant(a));
+
+  grid.innerHTML = filtres.map((prod) => {
+    const { grandes, miniatures } = getMediaProduit(prod);
+    const varianteInit = getVarianteParId(prod);
+    const photoInit = (varianteInit && varianteInit.image) ? varianteInit.image : grandes[0];
+    const indexInit = Math.max(0, grandes.indexOf(photoInit));
+    const epuise = estEpuise(prod, varianteInit);
+    const texteStock = formaterTexteStock(prod, varianteInit);
+    const estALaUne = Boolean(prod.aLaUne);
+    const estNouveau = !estALaUne && Boolean(prod.nouveau);
+
+    let badgeMiseEnAvant = "";
+    if (estALaUne) {
+      badgeMiseEnAvant = `<span class="badge-une">À la une</span>`;
+    } else if (estNouveau) {
+      badgeMiseEnAvant = `<span class="badge-nouveau">Nouveau</span>`;
+    }
+
+    const vignettesPhotos = miniatures.map((thumbSrc, idx) => {
+      const grandeSrc = grandes[idx] || grandes[0];
+      return `
+        <button
+          type="button"
+          class="thumb-btn ${!prod.video && idx === indexInit ? "actif" : ""}"
+          data-type="image"
+          data-full-src="${grandeSrc}"
+          data-index="${idx}"
+          aria-label="Miniature ${idx + 1} de ${prod.nom}"
+        >
+          <img src="${thumbSrc}" alt="${prod.nom} — miniature ${idx + 1}">
+        </button>
+      `;
+    }).join("");
+
+    const vignetteVideo = prod.video
+      ? `
+        <button
+          type="button"
+          class="thumb-btn thumb-video actif"
+          data-type="video"
+          data-video-src="${prod.video}"
+          aria-label="Lire la vidéo de ${prod.nom}"
+        >
+          <span>&#9654;</span>
+          <span>Vidéo</span>
+        </button>
+      `
+      : "";
+
+    const mediaVideo = prod.video
+      ? `<video class="video-principale" controls autoplay muted loop playsinline preload="metadata" hidden></video>`
+      : "";
+
+    return `
+      <article
+        class="carte-produit ${estALaUne ? "carte-a-la-une" : ""}"
+        data-id="${prod.id}"
+        data-photo-index="${indexInit}"
+        data-variante-id="${varianteInit ? varianteInit.id : ""}"
+        data-mode-media="${prod.video ? "video" : "photo"}"
+        ${prod.video ? `data-video-src="${prod.video}"` : ""}
+      >
+        <div class="carte-badges">
+          <span class="badge-categorie">${prod.categorieLabel || ""}</span>
+          ${badgeMiseEnAvant}
+        </div>
+        <div class="galerie-produit">
+          <img class="photo-principale" src="${photoInit}" alt="${prod.nom}">
+          ${mediaVideo}
+          <div class="vignettes-produit">${vignettesPhotos}${vignetteVideo}</div>
+        </div>
+        <h3>${prod.nom}</h3>
+        <p class="prix-produit">${Number(prod.prix || 0).toFixed(2)} €</p>
+        ${texteStock ? `<p class="stock-carte ${epuise ? "epuise" : ""}">${texteStock}</p>` : ""}
+        <p class="description-produit">${prod.description || ""}</p>
+        <ul class="carte-collection">
+          ${formaterCarteCollection(prod, varianteInit)}
+        </ul>
+        ${genererHtmlVariantes(prod, varianteInit, `select-var-${prod.id}`)}
+        <div class="actions-carte">
+          <button type="button" class="btn-detail js-ouvrir-fiche">Voir la fiche</button>
+          <button
+            type="button"
+            class="btn-ajouter"
+            data-id="${prod.id}"
+            ${epuise ? "disabled" : ""}
+          >
+            ${epuise ? "Épuisé" : "Ajouter au panier"}
+          </button>
+        </div>
+      </article>
+    `;
+  }).join("");
+
+  grid.querySelectorAll(".thumb-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const carte = btn.closest(".carte-produit");
+      carte.querySelectorAll(".thumb-btn").forEach((b) => b.classList.remove("actif"));
+      btn.classList.add("actif");
+
+      if (btn.dataset.type === "video") {
+        carte.dataset.modeMedia = "video";
+        afficherVideoSurCarte(carte, btn.dataset.videoSrc, true);
+      } else {
+        carte.dataset.modeMedia = "photo";
+        afficherPhotoSurCarte(carte, btn.dataset.fullSrc, true);
+        carte.dataset.photoIndex = btn.dataset.index || "0";
+      }
+    });
+  });
+
+  grid.querySelectorAll(".variante-select").forEach((select) => {
+    select.addEventListener("change", () => {
+      const carte = select.closest(".carte-produit");
+      const prod = PRODUITS.find((p) => p.id === select.dataset.produitId);
+      if (!carte || !prod) return;
+
+      const variante = getVarianteParId(prod, select.value);
+      carte.dataset.varianteId = variante ? variante.id : "";
+
+      const epuise = estEpuise(prod, variante);
+      const stockEl = carte.querySelector(".stock-carte");
+      const btnAjouter = carte.querySelector(".btn-ajouter");
+      const collectionEl = carte.querySelector(".carte-collection");
+
+      if (stockEl) {
+        stockEl.textContent = formaterTexteStock(prod, variante);
+        stockEl.classList.toggle("epuise", epuise);
+      }
+
+      if (collectionEl) {
+        collectionEl.innerHTML = formaterCarteCollection(prod, variante);
+      }
+
+      if (btnAjouter) {
+        btnAjouter.disabled = epuise;
+        btnAjouter.textContent = epuise ? "Épuisé" : "Ajouter au panier";
+      }
+
+      if (variante && variante.image) {
+        carte.dataset.modeMedia = "photo";
+        afficherPhotoSurCarte(carte, variante.image, true);
+        const { grandes } = getMediaProduit(prod);
+        const idx = grandes.indexOf(variante.image);
+        if (idx >= 0) {
+          carte.dataset.photoIndex = String(idx);
+          carte.querySelectorAll(".thumb-btn").forEach((b, i) => {
+            b.classList.toggle("actif", b.dataset.type === "image" && i === idx);
+          });
+        }
+      }
+    });
+  });
+
+  grid.querySelectorAll(".js-ouvrir-fiche").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const carte = btn.closest(".carte-produit");
+      if (carte) {
+        const mainVideo = carte.querySelector(".video-principale");
+        if (mainVideo) {
+          mainVideo.pause();
+        }
+        const indexInitial = Number(carte.dataset.photoIndex || 0);
+        const varianteId = carte.dataset.varianteId || null;
+        ouvrirModalProduit(carte.dataset.id, indexInitial, varianteId);
+      }
+    });
+  });
+
+  grid.querySelectorAll(".btn-ajouter").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const carte = btn.closest(".carte-produit");
+      const varianteId = carte ? carte.dataset.varianteId || null : null;
+      ajouterAuPanier(btn.dataset.id, varianteId);
+    });
+  });
+
+  configurerAutoplayVideosAccueil();
+}
+
+function ouvrirModalParId(id) {
+  const modal = document.getElementById(id);
+  if (modal) {
+    modal.hidden = false;
+  }
+}
+
+function fermerModalParId(id) {
+  const modal = document.getElementById(id);
+  if (modal) {
+    modal.hidden = true;
+  }
+}
+
+function initialiserModalesGenerales() {
+  document.querySelectorAll("[data-open-modal]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      ouvrirModalParId(btn.dataset.openModal);
+    });
+  });
+
+  document.querySelectorAll("[data-close-modal]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      fermerModalParId(btn.dataset.closeModal);
+    });
+  });
+
+  document.querySelectorAll("[data-switch-modal]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const [fromId, toId] = (btn.dataset.switchModal || "").split(":");
+      if (fromId) fermerModalParId(fromId);
+      if (toId) ouvrirModalParId(toId);
+    });
+  });
+
+  ["apropos-modal", "contact-modal", "panier-modal", "cgv-modal"].forEach((id) => {
+    const modal = document.getElementById(id);
+    if (!modal) return;
+    modal.addEventListener("click", (e) => {
+      if (e.target === modal) {
+        fermerModalParId(id);
+      }
+    });
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      fermerCadrePhoto();
+      fermerModalProduit();
+      ["apropos-modal", "contact-modal", "panier-modal", "cgv-modal"].forEach(fermerModalParId);
+    }
   });
 }
 
-// Fiche produit détaillée avec galerie 3 photos
-function openProductModal(id) {
-  const p = PRODUITS.find((item) => item.id === id);
-  if (!p) return;
+function ouvrirModalProduit(id, indexInitial = 0, varianteInitialeId = null) {
+  const modal = document.getElementById("produit-modal");
+  const produit = PRODUITS.find((p) => p.id === id);
+  if (!modal || !produit) return;
 
-  const isAvailable = p.stock > 0;
-  const photos = p.images && p.images.length ? p.images : [""];
-  const modalBody = document.getElementById("modal-body");
+  const { grandes, miniatures } = getMediaProduit(produit);
+  let varianteCourante = getVarianteParId(produit, varianteInitialeId);
+  const startIndex = grandes[indexInitial] ? indexInitial : 0;
 
-  const thumbsHtml = photos
-    .map(
-      (src, idx) => `
-      <button type="button" class="thumb-btn ${idx === 0 ? "active" : ""}" onclick="selectModalPhoto('${p.id}', ${idx})" aria-label="Voir photo ${idx + 1}">
-        <img src="${src}" alt="${p.nom} vue ${idx + 1}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
-        <div class="thumb-placeholder" style="display:none; background:${p.couleurFond || '#f5efe0'};">${idx + 1}</div>
+  const photoPrincipale = document.getElementById("modal-produit-photo-principale");
+  const videoPrincipale = document.getElementById("modal-produit-video-principale");
+  const vignettesBox = document.getElementById("modal-produit-vignettes");
+  const categorieEl = document.getElementById("modal-produit-categorie");
+  const uneBadgeEl = document.getElementById("modal-produit-une");
+  const nouveauBadgeEl = document.getElementById("modal-produit-nouveau");
+  const titreEl = document.getElementById("modal-produit-titre");
+  const prixEl = document.getElementById("modal-produit-prix");
+  const stockEl = document.getElementById("modal-produit-stock");
+  const descEl = document.getElementById("modal-produit-description");
+  const collectionEl = document.getElementById("modal-produit-collection");
+  const variantesContainer = document.getElementById("modal-produit-variantes");
+  const ajouterBtn = document.getElementById("modal-btn-ajouter");
+
+  const estALaUne = Boolean(produit.aLaUne);
+  const estNouveau = !estALaUne && Boolean(produit.nouveau);
+
+  categorieEl.textContent = produit.categorieLabel || "";
+  if (uneBadgeEl) {
+    uneBadgeEl.hidden = !estALaUne;
+  }
+  if (nouveauBadgeEl) {
+    nouveauBadgeEl.hidden = !estNouveau;
+  }
+  titreEl.textContent = produit.nom;
+  prixEl.textContent = `${Number(produit.prix || 0).toFixed(2)} €`;
+  descEl.textContent = produit.descriptionDetaillee || produit.description || "";
+
+  function afficherPhotoDansModal(src) {
+    if (videoPrincipale) {
+      videoPrincipale.pause();
+      videoPrincipale.hidden = true;
+    }
+    photoPrincipale.hidden = false;
+    photoPrincipale.src = src;
+  }
+
+  function afficherVideoDansModal(videoSrc) {
+    if (!videoPrincipale || !videoSrc) return;
+    photoPrincipale.hidden = true;
+    videoPrincipale.src = videoSrc;
+    videoPrincipale.muted = true;
+    videoPrincipale.loop = true;
+    videoPrincipale.hidden = false;
+    videoPrincipale.play().catch(() => {});
+  }
+
+  function actualiserEtatModal() {
+    const epuise = estEpuise(produit, varianteCourante);
+    const texte = formaterTexteStock(produit, varianteCourante);
+    stockEl.textContent = texte ? `Disponibilité : ${texte}` : "";
+    collectionEl.innerHTML = formaterCarteCollection(produit, varianteCourante);
+    ajouterBtn.disabled = epuise;
+    ajouterBtn.textContent = epuise ? "Épuisé" : "Ajouter au panier";
+  }
+
+  const photoDepart = (varianteCourante && varianteCourante.image)
+    ? varianteCourante.image
+    : grandes[startIndex];
+
+  photoPrincipale.alt = produit.nom;
+  afficherPhotoDansModal(photoDepart);
+
+  const boutonsPhotos = miniatures.map((thumbSrc, idx) => {
+    const grandeSrc = grandes[idx] || grandes[0];
+    return `
+      <button
+        type="button"
+        class="modal-thumb-btn ${idx === startIndex ? "actif" : ""}"
+        data-type="image"
+        data-full-src="${grandeSrc}"
+        aria-label="Photo ${idx + 1}"
+      >
+        <img src="${thumbSrc}" alt="${produit.nom} — miniature ${idx + 1}">
+      </button>
+    `;
+  }).join("");
+
+  const boutonVideo = produit.video
+    ? `
+      <button
+        type="button"
+        class="modal-thumb-btn modal-thumb-video"
+        data-type="video"
+        data-video-src="${produit.video}"
+        aria-label="Voir la vidéo de ${produit.nom}"
+      >
+        <span>&#9654;</span>
+        <span>Vidéo</span>
       </button>
     `
-    )
-    .join("");
+    : "";
 
-  modalBody.innerHTML = `
-    <div class="modal-gallery">
-      <div class="modal-img-box" id="modal-main-visual">
-        ${renderVisualImage(photos[0], p, "Vue 1")}
-      </div>
-      <div class="thumbs-row">
-        ${thumbsHtml}
-      </div>
-    </div>
-    <div>
-      <span class="pill-tag">${p.categorieLabel}</span>
-      <h2 style="font-size:1.9rem; margin-bottom:10px;">${p.nom}</h2>
-      <p style="font-size:1.5rem; font-family:'Fredoka',sans-serif; font-weight:700; color:var(--coral); margin-bottom:12px;">
-        ${formatPrice(p.prix)}
-      </p>
-      <p>${p.histoire}</p>
-      <ul class="specs-list">
-        <li><strong>📏 Hauteur :</strong> ${p.hauteur}</li>
-        <li><strong>🎨 Matériaux :</strong> ${p.materiaux}</li>
-        <li><strong>📦 Disponibilité :</strong> ${isAvailable ? (p.stock === 1 ? "Pièce unique en stock" : `${p.stock} exemplaires en stock`) : "Déjà adoptée"}</li>
-      </ul>
-      <button 
-        class="btn btn-primary btn-full" 
-        ${!isAvailable ? "disabled" : ""}
-        onclick="addToCart('${p.id}'); closeProductModal();"
-      >
-        ${isAvailable ? "Ajouter cette Bouille au panier" : "Cette figurine a déjà trouvé sa maison"}
-      </button>
-    </div>
-  `;
+  vignettesBox.innerHTML = `${boutonsPhotos}${boutonVideo}`;
 
-  document.getElementById("product-modal").classList.remove("hidden");
+  vignettesBox.querySelectorAll(".modal-thumb-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      vignettesBox.querySelectorAll(".modal-thumb-btn").forEach((b) => b.classList.remove("actif"));
+      btn.classList.add("actif");
+
+      if (btn.dataset.type === "video") {
+        afficherVideoDansModal(btn.dataset.videoSrc);
+      } else {
+        afficherPhotoDansModal(btn.dataset.fullSrc);
+      }
+    });
+  });
+
+  if (variantesContainer) {
+    variantesContainer.innerHTML = genererHtmlVariantes(
+      produit,
+      varianteCourante,
+      "modal-select-variante"
+    );
+
+    const modalSelect = document.getElementById("modal-select-variante");
+    if (modalSelect) {
+      modalSelect.addEventListener("change", () => {
+        varianteCourante = getVarianteParId(produit, modalSelect.value);
+        actualiserEtatModal();
+        if (varianteCourante && varianteCourante.image) {
+          afficherPhotoDansModal(varianteCourante.image);
+          const idx = grandes.indexOf(varianteCourante.image);
+          if (idx >= 0) {
+            vignettesBox.querySelectorAll(".modal-thumb-btn").forEach((b, i) => {
+              b.classList.toggle("actif", b.dataset.type === "image" && i === idx);
+            });
+          }
+        }
+      });
+    }
+  }
+
+  photoPrincipale.onclick = () => {
+    ouvrirCadrePhoto(photoPrincipale.src, produit.nom);
+  };
+
+  actualiserEtatModal();
+
+  ajouterBtn.onclick = () => {
+    const varId = varianteCourante ? varianteCourante.id : null;
+    if (ajouterAuPanier(produit.id, varId)) {
+      fermerModalProduit();
+    }
+  };
+
+  modal.hidden = false;
 }
 
-function closeProductModal() {
-  document.getElementById("product-modal").classList.add("hidden");
+function fermerModalProduit() {
+  const videoPrincipale = document.getElementById("modal-produit-video-principale");
+  if (videoPrincipale) {
+    videoPrincipale.pause();
+    videoPrincipale.removeAttribute("src");
+    videoPrincipale.hidden = true;
+  }
+  fermerModalParId("produit-modal");
 }
 
-// Gestion du panier multi-articles
-function saveCart() {
-  localStorage.setItem("bouilles_cart", JSON.stringify(cart));
-  updateCartUI();
+function initialiserModalProduit() {
+  const modal = document.getElementById("produit-modal");
+  const closeBtn = document.getElementById("close-produit-btn");
+  if (!modal || !closeBtn) return;
+
+  closeBtn.addEventListener("click", fermerModalProduit);
+
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) {
+      fermerModalProduit();
+    }
+  });
 }
 
-function addToCart(productId) {
-  const product = PRODUITS.find((p) => p.id === productId);
-  if (!product || product.stock <= 0) return;
+function ouvrirCadrePhoto(src, altText = "") {
+  const modal = document.getElementById("photo-cadre-modal");
+  const img = document.getElementById("photo-cadre-img");
+  if (!modal || !img || !src) return;
 
-  const existing = cart.find((item) => item.id === productId);
-  if (existing) {
-    if (existing.qty < product.stock) {
-      existing.qty += 1;
-    } else {
-      alert(`Il n'y a que ${product.stock} exemplaire(s) disponible(s) pour ${product.nom} !`);
+  img.src = src;
+  img.alt = altText;
+  modal.hidden = false;
+}
+
+function fermerCadrePhoto() {
+  fermerModalParId("photo-cadre-modal");
+}
+
+function initialiserCadrePhoto() {
+  const modal = document.getElementById("photo-cadre-modal");
+  const closeBtn = document.getElementById("close-photo-cadre-btn");
+  if (!modal || !closeBtn) return;
+
+  closeBtn.addEventListener("click", fermerCadrePhoto);
+
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) {
+      fermerCadrePhoto();
+    }
+  });
+}
+
+function initialiserPhotoAPropos() {
+  const img = document.getElementById("apropos-photo-img");
+  const placeholder = document.getElementById("apropos-photo-placeholder");
+  if (!img || !placeholder) return;
+
+  const src = (img.getAttribute("src") || "").trim();
+  if (src) {
+    img.hidden = false;
+    placeholder.hidden = true;
+  } else {
+    img.hidden = true;
+    placeholder.hidden = false;
+  }
+}
+
+function initialiserFormulairePersonnalise() {
+  const form = document.getElementById("form-creation-personnalisee");
+  const statutEl = document.getElementById("perso-statut");
+  if (!form) return;
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+
+    const formData = new FormData(form);
+    const nom = String(formData.get("nom") || "").trim();
+    const email = String(formData.get("email") || "").trim();
+    const typeCreation = String(formData.get("type_creation") || "");
+    const occasionDate = String(formData.get("occasion_date") || "").trim();
+    const message = String(formData.get("message") || "").trim();
+
+    if (!nom || !email || !message) {
+      if (statutEl) statutEl.textContent = "Merci de renseigner les champs obligatoires.";
       return;
     }
+
+    const estSurNetlify = !["localhost", "127.0.0.1", ""].includes(window.location.hostname);
+
+    if (estSurNetlify) {
+      try {
+        const encoded = new URLSearchParams(formData).toString();
+        const res = await fetch("/", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: encoded
+        });
+
+        if (!res.ok) {
+          throw new Error("Réponse réseau inattendue.");
+        }
+
+        form.reset();
+        if (statutEl) {
+          statutEl.textContent = "Merci ! Ton message a bien été envoyé à bouilles.a.malice@gmail.com.";
+        }
+        return;
+      } catch (err) {
+        if (statutEl) {
+          statutEl.textContent = "Envoi direct indisponible pour le moment : ouverture de ta messagerie vers bouilles.a.malice@gmail.com.";
+        }
+      }
+    }
+
+    const sujet = encodeURIComponent(`Contact — ${typeCreation} (${nom})`);
+    const corps = encodeURIComponent(
+      `Nom : ${nom}\n` +
+      `E-mail : ${email}\n` +
+      `Type de création : ${typeCreation}\n` +
+      `Date / occasion : ${occasionDate || "Non précisée"}\n\n` +
+      `Description :\n${message}`
+    );
+    window.location.href = `mailto:bouilles.a.malice@gmail.com?subject=${sujet}&body=${corps}`;
+    if (statutEl) {
+      statutEl.textContent = "Ta messagerie s'ouvre avec le message prérempli pour bouilles.a.malice@gmail.com.";
+    }
+  });
+}
+
+function initialiserRetourPaiement() {
+  const banner = document.getElementById("paiement-retour-banner");
+  if (!banner) return;
+
+  const params = new URLSearchParams(window.location.search);
+  const statutPaiement = params.get("paiement");
+
+  if (statutPaiement === "ok") {
+    banner.innerHTML =
+      "<strong>Merci pour ta commande !</strong> Ton paiement sécurisé a bien été validé et un reçu Stripe vient de t'être envoyé par e-mail. " +
+      "Tes <strong>kits numériques</strong> te sont envoyés par e-mail sous 24 h (pense à vérifier tes spams), et pour toute <strong>création physique</strong>, " +
+      "tu recevras le numéro de suivi Colissimo ou Mondial Relay dès l'expédition de ton colis.";
+    banner.classList.remove("annule");
+    banner.hidden = false;
+  } else if (statutPaiement === "annule") {
+    banner.innerHTML =
+      "<strong>Paiement annulé.</strong> Ta commande n'a pas été débitée. Tu peux reprendre ton panier à tout moment ou nous écrire à <strong>bouilles.a.malice@gmail.com</strong> si tu as une question.";
+    banner.classList.add("annule");
+    banner.hidden = false;
+  }
+}
+
+function initialiserFiltres() {
+  document.querySelectorAll(".filtre-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      categorieActive = btn.dataset.categorie;
+      document.querySelectorAll(".filtre-btn").forEach((b) => b.classList.remove("actif"));
+      btn.classList.add("actif");
+      afficherCatalogue();
+    });
+  });
+}
+
+function ajouterAuPanier(id, varianteId = null) {
+  const produit = PRODUITS.find((p) => p.id === id);
+  if (!produit) return false;
+
+  const variante = getVarianteParId(produit, varianteId);
+  const stockMax = getStockMax(produit, variante);
+
+  if (stockMax <= 0) {
+    alert("Cette déclinaison est actuellement épuisée.");
+    return false;
+  }
+
+  const clePanier = variante ? `${produit.id}::${variante.id}` : produit.id;
+  const libellePanier = variante ? `${produit.nom} (${variante.nom})` : produit.nom;
+  const { typeLivraison, gabarit } = getInfosLivraisonProduit(produit, variante);
+
+  const existant = panier.find((item) => item.cle === clePanier);
+  const qtyActuelle = existant ? existant.qty : 0;
+
+  if (qtyActuelle + 1 > stockMax) {
+    alert(`Stock maximum disponible pour cette déclinaison : ${stockMax}.`);
+    return false;
+  }
+
+  if (existant) {
+    existant.qty += 1;
   } else {
-    cart.push({ id: productId, qty: 1 });
+    panier.push({
+      cle: clePanier,
+      id: produit.id,
+      varianteId: variante ? variante.id : null,
+      nom: libellePanier,
+      prix: produit.prix,
+      livraison: typeLivraison,
+      gabarit,
+      qty: 1
+    });
   }
-
-  saveCart();
-  openCart();
+  afficherPanier();
+  return true;
 }
 
-function changeCartQty(productId, delta) {
-  const index = cart.findIndex((item) => item.id === productId);
-  if (index === -1) return;
+function afficherPanier() {
+  const liste = document.getElementById("panier-items");
+  const countEl = document.getElementById("panier-count");
+  const headerCountEl = document.getElementById("header-panier-count");
+  const totalEl = document.getElementById("panier-total");
+  if (!liste || !countEl || !totalEl) return;
 
-  const product = PRODUITS.find((p) => p.id === productId);
-  const newQty = cart[index].qty + delta;
+  const totalQty = panier.reduce((acc, item) => acc + item.qty, 0);
+  const resume = calculerResumePanier();
 
-  if (newQty <= 0) {
-    cart.splice(index, 1);
-  } else if (product && newQty <= product.stock) {
-    cart[index].qty = newQty;
-  }
-
-  saveCart();
-}
-
-function updateCartUI() {
-  const countEl = document.getElementById("cart-count");
-  const itemsEl = document.getElementById("cart-items");
-  const subtotalEl = document.getElementById("cart-subtotal");
-  const shippingEl = document.getElementById("cart-shipping");
-  const totalEl = document.getElementById("cart-total");
-  const checkoutBtn = document.getElementById("checkout-btn");
-
-  const totalQty = cart.reduce((sum, item) => sum + item.qty, 0);
   countEl.textContent = totalQty;
+  if (headerCountEl) headerCountEl.textContent = totalQty;
 
-  if (cart.length === 0) {
-    itemsEl.innerHTML = `<p style="text-align:center; color:var(--ink-muted); padding:40px 10px; font-weight:700;">Votre panier est encore vide.<br>Choisissez une première Bouille à adopter !</p>`;
-    subtotalEl.textContent = "0,00 €";
-    shippingEl.textContent = "0,00 €";
-    totalEl.textContent = "0,00 €";
-    checkoutBtn.disabled = true;
+  if (!panier.length) {
+    liste.innerHTML = "<li>Ton panier est vide pour le moment.</li>";
+    totalEl.textContent = "0.00 €";
     return;
   }
 
-  checkoutBtn.disabled = false;
-  let subtotal = 0;
-
-  itemsEl.innerHTML = cart
-    .map((item) => {
-      const p = PRODUITS.find((prod) => prod.id === item.id);
-      if (!p) return "";
-      const lineTotal = p.prix * item.qty;
-      subtotal += lineTotal;
-
-      return `
-        <div class="cart-item">
-          <div class="cart-item-info">
-            <h4>${p.nom}</h4>
-            <span>${formatPrice(p.prix)} × ${item.qty} = ${formatPrice(lineTotal)}</span>
-          </div>
-          <div class="qty-controls">
-            <button class="qty-btn" onclick="changeCartQty('${p.id}', -1)">−</button>
-            <strong>${item.qty}</strong>
-            <button class="qty-btn" onclick="changeCartQty('${p.id}', 1)">+</button>
-          </div>
-        </div>
-      `;
-    })
-    .join("");
-
-  const shipping = subtotal >= FREE_SHIPPING_THRESHOLD ? 0 : SHIPPING_COST;
-  const total = subtotal + shipping;
-
-  subtotalEl.textContent = formatPrice(subtotal);
-  shippingEl.textContent = shipping === 0 ? "Offerts 🎉" : formatPrice(shipping);
-  totalEl.textContent = formatPrice(total);
-}
-
-function openCart() {
-  document.getElementById("cart-drawer").classList.add("open");
-  document.getElementById("cart-backdrop").classList.remove("hidden");
-}
-
-function closeCart() {
-  document.getElementById("cart-drawer").classList.remove("open");
-  document.getElementById("cart-backdrop").classList.add("hidden");
-}
-
-// Connexion Stripe Checkout via Netlify Function
-document.getElementById("checkout-btn").addEventListener("click", async () => {
-  const btn = document.getElementById("checkout-btn");
-  btn.disabled = true;
-  btn.textContent = "Redirection vers Stripe...";
-
-  try {
-    const itemsPayload = cart.map((item) => {
-      const p = PRODUITS.find((prod) => prod.id === item.id);
-      return {
-        id: p.id,
-        nom: p.nom,
-        prix: p.prix,
-        qty: item.qty
-      };
-    });
-
-    const response = await fetch("/.netlify/functions/create-checkout", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ items: itemsPayload })
-    });
-
-    const data = await response.json();
-    if (data.url) {
-      window.location.href = data.url;
-    } else {
-      throw new Error(data.error || "Erreur lors de la création du paiement.");
-    }
-  } catch (err) {
-    alert(
-      "Le module Stripe n'est pas encore activé en ligne (ou erreur réseau).\n" +
-      "Détail : " + err.message
-    );
-    btn.disabled = false;
-    btn.textContent = "Passer au paiement sécurisé";
-  }
-});
-
-// Gestion des retours Stripe (?paiement=succes ou ?paiement=annule)
-function checkPaymentReturn() {
-  const params = new URLSearchParams(window.location.search);
-  const status = params.get("paiement");
-  const banner = document.getElementById("payment-banner");
-
-  if (status === "succes") {
-    localStorage.removeItem("bouilles_cart");
-    cart = [];
-    updateCartUI();
-    banner.textContent = "🎉 Merci pour votre adoption ! Votre commande a bien été enregistrée et un reçu vous a été envoyé par e-mail.";
-    banner.classList.remove("hidden");
-  } else if (status === "annule") {
-    banner.textContent = "Le paiement a été annulé. Vos Bouilles sont toujours bien au chaud dans votre panier.";
-    banner.classList.add("canceled");
-    banner.classList.remove("hidden");
-  }
-}
-
-// Modale Mentions Légales & CGV génériques
-function openLegalModal(type) {
-  const legalBody = document.getElementById("legal-body");
-
-  if (type === "mentions") {
-    legalBody.innerHTML = `
-      <h2>Mentions Légales</h2>
-      <h3>1. Éditeur du site</h3>
-      <p>Le site <strong>Les Bouilles à Malice</strong> est édité par :<br>
-      <strong>[Prénom Nom / Dénomination commerciale]</strong> — Entrepreneur Individuel (Micro-entreprise)<br>
-      Adresse de l'atelier : <strong>[Adresse postale complète]</strong><br>
-      Numéro SIRET : <strong>[Votre numéro SIRET à 14 chiffres]</strong><br>
-      E-mail : <strong>contact@lesbouillesamalice.fr</strong><br>
-      TVA non applicable, art. 293 B du CGI <em>(à adapter selon votre régime fiscal)</em>.</p>
-
-      <h3>2. Hébergement</h3>
-      <p>Le site est hébergé par <strong>Netlify, Inc.</strong>, 512 2nd Street, Suite 200, San Francisco, CA 94107, États-Unis.</p>
-
-      <h3>3. Propriété intellectuelle</h3>
-      <p>L'ensemble des créations, figurines, photographies, textes et visuels présents sur ce site sont la propriété exclusive de <strong>Les Bouilles à Malice</strong>. Toute reproduction sans autorisation écrite est interdite.</p>
-    `;
-  } else {
-    legalBody.innerHTML = `
-      <h2>Conditions Générales de Vente (CGV)</h2>
-      <h3>Article 1 — Objet et nature des créations</h3>
-      <p>Les présentes CGV régissent les ventes de figurines artisanales réalisées sur le site <strong>Les Bouilles à Malice</strong>. Chaque figurine est sculptée et peinte entièrement à la main. De légères variations de texture ou de teinte témoignent du caractère artisanal et unique de chaque pièce et ne constituent pas un défaut.</p>
-      <p><strong>Avertissement :</strong> Ces figurines sont des objets de décoration et de collection. Elles ne conviennent pas aux enfants de moins de 3 ans (petits éléments).</p>
-
-      <h3>Article 2 — Prix et paiement</h3>
-      <p>Les prix sont indiqués en euros (€) toutes taxes comprises, hors frais de livraison. Le règlement s'effectue comptant lors de la commande via la plateforme sécurisée <strong>Stripe</strong> (Carte Bancaire, Apple Pay, Google Pay). La vente est définitive après confirmation du paiement.</p>
-
-      <h3>Article 3 — Livraison</h3>
-      <p>Les commandes sont expédiées sous 48 à 72 heures ouvrées dans un emballage protecteur adapté. Les frais de port sont calculés avant validation du panier (offerts dès 60,00 € d'achat). Les délais d'acheminement dépendent du transporteur choisi (Colissimo ou Mondial Relay).</p>
-
-      <h3>Article 4 — Droit de rétractation</h3>
-      <p>Conformément à l'article L.221-18 du Code de la consommation, l'acheteur dispose d'un délai de <strong>14 jours</strong> à compter de la réception de sa commande pour exercer son droit de rétractation (hors commandes personnalisées réalisées sur mesure à la demande du client, exclues par l'article L.221-28). Les frais de retour restent à la charge de l'acheteur ; la figurine doit être renvoyée intacte dans son emballage d'origine.</p>
-
-      <h3>Article 5 — Données personnelles</h3>
-      <p>Les informations recueillies lors de la commande sont strictement nécessaires à la préparation et à l'expédition du colis et ne sont jamais cédées à des tiers.</p>
-    `;
-  }
-
-  document.getElementById("legal-modal").classList.remove("hidden");
-}
-
-// Événements
-document.querySelectorAll(".filter-btn").forEach((btn) => {
-  btn.addEventListener("click", () => {
-    document.querySelectorAll(".filter-btn").forEach((b) => b.classList.remove("active"));
-    btn.classList.add("active");
-    currentCategory = btn.dataset.category;
-    renderProducts();
+  const lignesArticles = panier.map((item) => {
+    const { typeLivraison, gabarit } = getInfosLivraisonItem(item);
+    const infoLivraison = typeLivraison === "numerique"
+      ? "Numérique (0,00 € port)"
+      : `Physique — gabarit ${gabarit}`;
+    return `<li>${item.nom} × ${item.qty} — <em>${infoLivraison}</em> — ${(item.prix * item.qty).toFixed(2)} €</li>`;
   });
-});
 
-searchInput.addEventListener("input", (e) => {
-  searchQuery = e.target.value;
-  renderProducts();
-});
+  let detailPort = "0.00 €";
+  if (resume.aDuPhysique) {
+    if (resume.sousTotalTotal >= SEUIL_PORT_GRATUIT) {
+      detailPort = "0.00 € (offert dès 75,00 €)";
+    } else if (resume.quantitePhysique >= 2) {
+      detailPort = `${resume.fraisPort.toFixed(2)} € (Mondial Relay / Colissimo — forfait 2+ produits physiques)`;
+    } else {
+      detailPort = `${resume.fraisPort.toFixed(2)} € (Mondial Relay / Colissimo — gabarit ${resume.gabaritMax})`;
+    }
+  } else {
+    detailPort = "0.00 € (articles numériques)";
+  }
 
-availableCheckbox.addEventListener("change", (e) => {
-  onlyAvailable = e.target.checked;
-  renderProducts();
-});
+  lignesArticles.push(`<li>Frais de port : <strong>${detailPort}</strong></li>`);
 
-sortSelect.addEventListener("change", (e) => {
-  currentSort = e.target.value;
-  renderProducts();
-});
+  if (resume.aDuPhysique && resume.montantRestantPortGratuit > 0) {
+    lignesArticles.push(
+      `<li><strong>Plus que ${resume.montantRestantPortGratuit.toFixed(2)} € pour avoir les frais de port offerts !</strong></li>`
+    );
+  }
 
-document.getElementById("open-cart-btn").addEventListener("click", openCart);
-document.getElementById("close-cart-btn").addEventListener("click", closeCart);
-document.getElementById("cart-backdrop").addEventListener("click", closeCart);
-document.getElementById("close-modal-btn").addEventListener("click", closeProductModal);
-document.getElementById("product-modal").addEventListener("click", (e) => {
-  if (e.target.id === "product-modal") closeProductModal();
-});
+  liste.innerHTML = lignesArticles.join("");
+  totalEl.textContent = `${resume.totalAvecPort.toFixed(2)} €`;
+}
 
-document.getElementById("close-legal-btn").addEventListener("click", () => {
-  document.getElementById("legal-modal").classList.add("hidden");
-});
-document.getElementById("legal-modal").addEventListener("click", (e) => {
-  if (e.target.id === "legal-modal") document.getElementById("legal-modal").classList.add("hidden");
-});
+function initialiserCheckout() {
+  const btn = document.getElementById("btn-checkout");
+  if (!btn) return;
 
-// Initialisation
-renderProducts();
-updateCartUI();
-checkPaymentReturn();
+  btn.addEventListener("click", async () => {
+    if (!panier.length) {
+      alert("Ton panier est vide.");
+      return;
+    }
+
+    try {
+      const res = await fetch("/.netlify/functions/create-checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items: panier })
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.url) {
+        throw new Error(data.error || "Erreur lors de la création du paiement.");
+      }
+
+      window.location.href = data.url;
+    } catch (err) {
+      alert(`Le module Stripe n'est pas encore activé en ligne (ou erreur réseau).\nDétail : ${err.message}`);
+    }
+  });
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  initialiserRetourPaiement();
+  initialiserFiltres();
+  initialiserCheckout();
+  initialiserModalesGenerales();
+  initialiserModalProduit();
+  initialiserCadrePhoto();
+  initialiserPhotoAPropos();
+  initialiserFormulairePersonnalise();
+  afficherCatalogue();
+  afficherPanier();
+});
