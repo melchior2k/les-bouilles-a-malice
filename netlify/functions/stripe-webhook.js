@@ -1,9 +1,20 @@
+import fs from "node:fs";
+import path from "node:path";
+import vm from "node:vm";
 import Stripe from "stripe";
 import { getStore } from "@netlify/blobs";
-import catalogueModule from "../../produits.js";
+
+function chargerProduits() {
+  const chemin = path.resolve(process.cwd(), "produits.js");
+  const code = fs.readFileSync(chemin, "utf-8");
+  const contexte = {};
+  vm.createContext(contexte);
+  vm.runInContext(`${code}\nthis.PRODUITS = PRODUITS;`, contexte);
+  return contexte.PRODUITS || [];
+}
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
-const PRODUITS = catalogueModule.PRODUITS || [];
+const PRODUITS = chargerProduits();
 
 function getCleStock(id, varianteId) {
   return varianteId ? `${id}::${varianteId}` : id;
@@ -39,7 +50,6 @@ export default async (req) => {
     const session = event.data.object;
     const store = getStore("inventaire-bouilles");
 
-    // Protection contre les doublons d'événements Stripe
     const dejaTraite = await store.get(`event_${event.id}`);
     if (dejaTraite) {
       return new Response("Déjà traité", { status: 200 });
@@ -63,12 +73,12 @@ export default async (req) => {
           ? prod.variantes.find((v) => v.id === art.varianteId)
           : null;
 
-        const stockBase = typeof stocksLive[getCleStock(prod.id, variante ? variante.id : null)] === "number"
-          ? stocksLive[getCleStock(prod.id, variante ? variante.id : null)]
+        const cle = getCleStock(prod.id, variante ? variante.id : null);
+        const stockBase = typeof stocksLive[cle] === "number"
+          ? stocksLive[cle]
           : getStockInitial(prod, variante);
 
         if (Number.isFinite(stockBase)) {
-          const cle = getCleStock(prod.id, variante ? variante.id : null);
           const nouveauStock = Math.max(0, stockBase - Number(art.qty || 1));
           stocksLive[cle] = nouveauStock;
         }

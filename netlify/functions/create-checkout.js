@@ -1,9 +1,20 @@
+import fs from "node:fs";
+import path from "node:path";
+import vm from "node:vm";
 import Stripe from "stripe";
 import { getStore } from "@netlify/blobs";
-import catalogueModule from "../../produits.js";
+
+function chargerProduits() {
+  const chemin = path.resolve(process.cwd(), "produits.js");
+  const code = fs.readFileSync(chemin, "utf-8");
+  const contexte = {};
+  vm.createContext(contexte);
+  vm.runInContext(`${code}\nthis.PRODUITS = PRODUITS;`, contexte);
+  return contexte.PRODUITS || [];
+}
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
-const PRODUITS = catalogueModule.PRODUITS || [];
+const PRODUITS = chargerProduits();
 
 const SEUIL_PORT_GRATUIT = 75.0;
 const PORT_DEUX_PRODUITS_PHYSIQUES = 6.9;
