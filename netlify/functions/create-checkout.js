@@ -1,71 +1,77 @@
-const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
-const { PRODUITS } = require("../../produits.js");
+import Stripe from "stripe";
+import { getStore } from "@netlify/blobs";
+import catalogueModule from "../../produits.js";
 
-const TARIFS_GABARIT_CENTIMES = {
-  petit: 490,  // 4,90 €
-  moyen: 590,  // 5,90 €
-  grand: 690   // 6,90 €
-};
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+const PRODUITS = catalogueModule.PRODUITS || [];
 
-const PORT_DEUX_PRODUITS_PHYSIQUES_CENTIMES = 690; // 6,90 €
+const SEUIL_PORT_GRATUIT = 75.0;
+const PORT_DEUX_PRODUITS_PHYSIQUES = 6.9;
+const TARIFS_GABARIT = { petit: 4.9, moyen: 5.9, grand: 6.9 };
+const PRIORITE_GABARIT = { petit: 1, moyen: 2, grand: 3 };
 
-const PRIORITE_GABARIT = {
-  petit: 1,
-  moyen: 2,
-  grand: 3
-};
+function getCleStock(id, varianteId) {
+  return varianteId ? `${id}::${varianteId}` : id;
+}
 
-const SEUIL_FRANCO_CENTIMES = 7500; // 75,00 €
+function getStockInitial(prod, variante) {
+  const livraison = (variante && variante.livraison) || prod.livraison || "physique";
+  if (livraison === "numerique") return Infinity;
+  if (variante && typeof variante.stock === "number") return variante.stock;
+  return typeof prod.stock === "number" ? prod.stock : Infinity;
+}
 
-exports.handler = async (event) => {
-  if (event.httpMethod !== "POST") {
-    return {
-      statusCode: 405,
-      body: JSON.stringify({ error: "Méthode non autorisée" })
-    };
+export default async (req) => {
+  if (req.method !== "POST") {
+    return new Response(JSON.stringify({ error: "Méthode non autorisée" }), { status: 405 });
   }
 
   try {
-    const { items } = JSON.parse(event.body || "{}");
-    if (!Array.isArray(items) || !items.length) {
-      return {
-        statusCode: 400,
-        body: JSON.stringify({ error: "Panier vide" })
-      };
+    const { items } = await req.json();
+    if (!Array.isArray(items) || items.length === 0) {
+      return new Response(JSON.stringify({ error: "Panier vide" }), { status: 400 });
     }
 
-    let sousTotalGlobalCentimes = 0;
-    let quantitePhysique = 0;
-    let aDuPhysique = false;
-    let prioriteMax = 0;
-    let gabaritMax = "petit";
+    const store = getStore("inventaire-bouilles");
+    const stocksLive = (await store.get("stocks", { type: "json" })) || {};
 
-    const line_items = items.map((item) => {
+    const lineItems = [];
+    const resumeMetadata = [];
+    let sousTotal = 0;
+    let quantitePhysique = 0;
+    let gabaritMax = "petit";
+    let prioriteMax = 0;
+    let aDuPhysique = false;
+
+    for (const item of items) {
       const prod = PRODUITS.find((p) => p.id === item.id);
       if (!prod) {
-        throw new Error(`Produit introuvable : ${item.id}`);
+        return new Response(JSON.stringify({ error: `Produit introuvable : ${item.id}` }), { status: 400 });
       }
 
-      const variante = Array.isArray(prod.variantes) && item.varianteId
+      const variante = (Array.isArray(prod.variantes) && item.varianteId)
         ? prod.variantes.find((v) => v.id === item.varianteId)
         : null;
 
-      const stockMax = variante && typeof variante.stock === "number"
-        ? variante.stock
-        : (typeof prod.stock === "number" ? prod.stock : Infinity);
-
-      const qty = Math.max(1, parseInt(item.qty, 10) || 1);
-      if (Number.isFinite(stockMax) && qty > stockMax) {
-        throw new Error(`Stock insuffisant pour ${prod.nom}`);
-      }
-
-      const prixUnitaireCentimes = Math.round(Number(prod.prix) * 100);
-      sousTotalGlobalCentimes += prixUnitaireCentimes * qty;
-
-      const typeLivraison = (variante && variante.livraison) || prod.livraison || "physique";
+      const qty = Math.max(1, Math.floor(Number(item.qty || 1)));
+      const cleStock = getCleStock(prod.id, variante ? variante.id : null);
+      const livraison = (variante && variante.livraison) || prod.livraison || "physique";
       const gabarit = (variante && variante.gabarit) || prod.gabarit || "petit";
 
-      if (typeLivraison === "physique") {
+      if (livraison !== "numerique") {
+        const stockActuel = typeof stocksLive[cleStock] === "number"
+          ? stocksLive[cleStock]
+          : getStockInitial(prod, variante);
+
+        if (qty > stockActuel) {
+          return new Response(
+            JSON.stringify({
+              error: `Stock insuffisant pour "${prod.nom}" (disponible : ${Math.max(0, stockActuel)}).`
+            }),
+            { status: 409 }
+          );
+        }
+
         aDuPhysique = true;
         quantitePhysique += qty;
         const prio = PRIORITE_GABARIT[gabarit] || 1;
@@ -75,96 +81,68 @@ exports.handler = async (event) => {
         }
       }
 
-      const nomArticle = variante ? `${prod.nom} (${variante.nom})` : prod.nom;
+      const prixUnitaire = Number(prod.prix || 0);
+      sousTotal += prixUnitaire * qty;
 
-      return {
+      const nomLigne = variante ? `${prod.nom} (${variante.nom})` : prod.nom;
+
+      lineItems.push({
         price_data: {
           currency: "eur",
-          product_data: {
-            name: nomArticle
-          },
-          unit_amount: prixUnitaireCentimes
+          product_data: { name: nomLigne },
+          unit_amount: Math.round(prixUnitaire * 100)
         },
         quantity: qty
-      };
+      });
+
+      if (livraison !== "numerique") {
+        resumeMetadata.push({
+          id: prod.id,
+          varianteId: variante ? variante.id : null,
+          qty
+        });
+      }
+    }
+
+    if (aDuPhysique && sousTotal < SEUIL_PORT_GRATUIT) {
+      const fraisPort = quantitePhysique >= 2
+        ? PORT_DEUX_PRODUITS_PHYSIQUES
+        : (TARIFS_GABARIT[gabaritMax] ?? TARIFS_GABARIT.petit);
+
+      lineItems.push({
+        price_data: {
+          currency: "eur",
+          product_data: { name: "Frais de port (Mondial Relay / Colissimo)" },
+          unit_amount: Math.round(fraisPort * 100)
+        },
+        quantity: 1
+      });
+    }
+
+    const origin = new URL(req.url).origin;
+
+    const session = await stripe.checkout.sessions.create({
+      mode: "payment",
+      line_items: lineItems,
+      allow_promotion_codes: true,
+      shipping_address_collection: aDuPhysique
+        ? { allowed_countries: ["FR", "BE", "LU", "CH"] }
+        : undefined,
+      metadata: {
+        articles: JSON.stringify(resumeMetadata)
+      },
+      success_url: `${origin}/?paiement=ok`,
+      cancel_url: `${origin}/?paiement=annule`
     });
 
-    let fraisPortCentimes = 0;
-    if (aDuPhysique && sousTotalGlobalCentimes < SEUIL_FRANCO_CENTIMES) {
-      fraisPortCentimes = quantitePhysique >= 2
-        ? PORT_DEUX_PRODUITS_PHYSIQUES_CENTIMES
-        : (TARIFS_GABARIT_CENTIMES[gabaritMax] ?? TARIFS_GABARIT_CENTIMES.petit);
-    }
-
-    const baseUrl = process.env.URL || "https://les-bouilles-a-malice.netlify.app";
-
-    const sessionParams = {
-      mode: "payment",
-      allow_promotion_codes: true,
-      line_items,
-      phone_number_collection: {
-        enabled: true
-      },
-      success_url: `${baseUrl}/?paiement=ok`,
-      cancel_url: `${baseUrl}/?paiement=annule`
-    };
-
-    if (aDuPhysique) {
-      sessionParams.shipping_address_collection = {
-        allowed_countries: ["FR"]
-      };
-      sessionParams.shipping_options = [
-        {
-          shipping_rate_data: {
-            type: "fixed_amount",
-            fixed_amount: {
-              amount: fraisPortCentimes,
-              currency: "eur"
-            },
-            display_name: fraisPortCentimes === 0
-              ? "Mondial Relay — Gratuit (dès 75 €)"
-              : (quantitePhysique >= 2
-                ? "Mondial Relay (2+ produits physiques)"
-                : `Mondial Relay (gabarit ${gabaritMax})`),
-            delivery_estimate: {
-              minimum: { unit: "business_day", value: 3 },
-              maximum: { unit: "business_day", value: 6 }
-            }
-          }
-        },
-        {
-          shipping_rate_data: {
-            type: "fixed_amount",
-            fixed_amount: {
-              amount: fraisPortCentimes,
-              currency: "eur"
-            },
-            display_name: fraisPortCentimes === 0
-              ? "Colissimo — Gratuit (dès 75 €)"
-              : (quantitePhysique >= 2
-                ? "Colissimo (2+ produits physiques)"
-                : `Colissimo (gabarit ${gabaritMax})`),
-            delivery_estimate: {
-              minimum: { unit: "business_day", value: 2 },
-              maximum: { unit: "business_day", value: 4 }
-            }
-          }
-        }
-      ];
-    }
-
-    const session = await stripe.checkout.sessions.create(sessionParams);
-
-    return {
-      statusCode: 200,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url: session.url })
-    };
+    return new Response(JSON.stringify({ url: session.url }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" }
+    });
   } catch (err) {
-    return {
-      statusCode: 500,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ error: err.message })
-    };
+    return new Response(JSON.stringify({ error: err.message }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" }
+    });
   }
 };

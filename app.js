@@ -312,7 +312,6 @@ function configurerAutoplayVideosAccueil() {
         if (!videoSrc || !mainVideo) return;
 
         if (entry.isIntersecting) {
-          // Si l'utilisateur n'a pas volontairement basculé sur une miniature photo, lance la vidéo
           if (carte.dataset.modeMedia !== "photo") {
             const thumbVideo = carte.querySelector(".thumb-video");
             carte.querySelectorAll(".thumb-btn").forEach((b) => b.classList.remove("actif"));
@@ -330,6 +329,32 @@ function configurerAutoplayVideosAccueil() {
   cartesAvecVideo.forEach((carte) => observateurVideosAccueil.observe(carte));
 }
 
+async function synchroniserStocksEnDirect() {
+  if (typeof PRODUITS === "undefined" || !Array.isArray(PRODUITS)) return;
+
+  try {
+    const res = await fetch("/.netlify/functions/get-stocks", { cache: "no-store" });
+    if (!res.ok) return;
+    const data = await res.json();
+    const stocksLive = data && data.stocks ? data.stocks : {};
+
+    for (const prod of PRODUITS) {
+      if (Array.isArray(prod.variantes) && prod.variantes.length > 0) {
+        for (const v of prod.variantes) {
+          const cle = `${prod.id}::${v.id}`;
+          if (typeof stocksLive[cle] === "number") {
+            v.stock = stocksLive[cle];
+          }
+        }
+      } else if (typeof stocksLive[prod.id] === "number") {
+        prod.stock = stocksLive[prod.id];
+      }
+    }
+  } catch {
+    // En local sans serveur Netlify actif, on conserve les stocks de produits.js
+  }
+}
+
 function afficherCatalogue() {
   const grid = document.getElementById("catalogue-grid");
   if (!grid) return;
@@ -343,7 +368,6 @@ function afficherCatalogue() {
     ? [...PRODUITS]
     : PRODUITS.filter((p) => p.categorie === categorieActive);
 
-  // Priorité : aLaUne (2) > nouveau (1) > standard (0), en conservant l'ordre relatif
   filtres.sort((a, b) => getScoreMiseEnAvant(b) - getScoreMiseEnAvant(a));
 
   grid.innerHTML = filtres.map((prod) => {
@@ -1022,7 +1046,7 @@ function initialiserCheckout() {
   });
 }
 
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
   initialiserRetourPaiement();
   initialiserFiltres();
   initialiserCheckout();
@@ -1031,6 +1055,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initialiserCadrePhoto();
   initialiserPhotoAPropos();
   initialiserFormulairePersonnalise();
+  await synchroniserStocksEnDirect();
   afficherCatalogue();
   afficherPanier();
 });
